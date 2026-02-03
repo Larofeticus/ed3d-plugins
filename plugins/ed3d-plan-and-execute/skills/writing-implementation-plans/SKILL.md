@@ -11,10 +11,6 @@ Write comprehensive implementation plans assuming the engineer has zero context 
 
 Assume they are a skilled developer, but know almost nothing about our toolset or problem domain. Assume they don't know good test design very well.
 
-**REQUIRED SKILL:** You MUST activate the `coding-effectively` skill.
-
-**CONDITIONAL SKILLS:** If you have skills available to you that are relevant to the topics in the design plan, activate them.
-
 **Announce at start:** "I'm using the writing-implementation-plans skill to create the implementation plan."
 
 **Save plans to:** `docs/implementation-plans/YYYY-MM-DD-<feature-name>/phase_##.md`
@@ -380,7 +376,7 @@ Before creating tasks, capture absolute paths:
 ```markdown
 - [ ] Phase NA: Read [Phase Name] from {DESIGN_PATH}
       → blocked by: Phase (N-1)D (or nothing if N=1)
-- [ ] Phase NB: Investigate codebase for Phase N
+- [ ] Phase NB: Investigate codebase for Phase N and activate relevant skills
       → blocked by: Phase NA
 - [ ] Phase NC: Research external deps (Phase N)
       → blocked by: Phase NB
@@ -406,7 +402,7 @@ Before creating the Finalization task, check if `.ed3d/implementation-plan-guida
 
 ```
 TaskCreate: "Phase 1A: Read Token Types from /Users/ed/project/docs/design-plans/2025-01-24-oauth.md"
-TaskCreate: "Phase 1B: Investigate codebase for Phase 1"
+TaskCreate: "Phase 1B: Investigate codebase for Phase 1 and activate relevant skills"
   → TaskUpdate: addBlockedBy: [1A]
 TaskCreate: "Phase 1C: Research external deps (Phase 1)"
   → TaskUpdate: addBlockedBy: [1B]
@@ -415,7 +411,7 @@ TaskCreate: "Phase 1D: Write /Users/ed/project/docs/implementation-plans/2025-01
 
 TaskCreate: "Phase 2A: Read Token Service from /Users/ed/project/docs/design-plans/2025-01-24-oauth.md"
   → TaskUpdate: addBlockedBy: [1D]
-TaskCreate: "Phase 2B: Investigate codebase for Phase 2"
+TaskCreate: "Phase 2B: Investigate codebase for Phase 2 and activate relevant skills"
   → TaskUpdate: addBlockedBy: [2A]
 TaskCreate: "Phase 2C: Research external deps (Phase 2)"
   → TaskUpdate: addBlockedBy: [2B]
@@ -424,7 +420,7 @@ TaskCreate: "Phase 2D: Write /Users/ed/project/docs/implementation-plans/2025-01
 
 TaskCreate: "Phase 3A: Read Session Manager from /Users/ed/project/docs/design-plans/2025-01-24-oauth.md"
   → TaskUpdate: addBlockedBy: [2D]
-TaskCreate: "Phase 3B: Investigate codebase for Phase 3"
+TaskCreate: "Phase 3B: Investigate codebase for Phase 3 and activate relevant skills"
   → TaskUpdate: addBlockedBy: [3A]
 TaskCreate: "Phase 3C: Research external deps (Phase 3)"
   → TaskUpdate: addBlockedBy: [3B]
