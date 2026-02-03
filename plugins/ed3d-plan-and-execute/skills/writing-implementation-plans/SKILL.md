@@ -459,6 +459,11 @@ Use TaskUpdate to mark each sub-task as in_progress when starting, completed whe
    - Mark task NB as in_progress
    - Dispatch codebase-investigator with design assumptions for this phase
    - Review investigator findings for discrepancies
+   - **Activate relevant skills** based on findings (if not already active):
+     - TypeScript code? Activate TypeScript/coding style skills
+     - React components? Activate React skills
+     - Database work? Activate database skills
+     - Match skills to the technologies this phase involves
    - Mark task NB as completed
 
 3. **Task NC: Research external dependencies** (if phase involves them)
@@ -548,6 +553,11 @@ Use TaskUpdate to mark each sub-task as in_progress when starting, completed whe
    - Mark task NB as in_progress
    - Dispatch codebase-investigator with design assumptions for this phase
    - Review investigator findings for discrepancies
+   - **Activate relevant skills** based on findings (if not already active):
+     - TypeScript code? Activate TypeScript/coding style skills
+     - React components? Activate React skills
+     - Database work? Activate database skills
+     - Match skills to the technologies this phase involves
    - Mark task NB as completed
 
 3. **Task NC: Research external dependencies** (if phase involves them)
