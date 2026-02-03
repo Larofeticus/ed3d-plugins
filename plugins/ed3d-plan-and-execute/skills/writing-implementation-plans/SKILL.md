@@ -384,6 +384,8 @@ Before creating tasks, capture absolute paths:
       → blocked by: Phase NC
 ```
 
+**VERBATIM TASK NAMES — DO NOT PARAPHRASE.** Copy task names exactly as shown above. "Investigate codebase for Phase N and activate relevant skills" must include "and activate relevant skills" — that phrase triggers skill activation after compaction. Paraphrasing loses critical instructions.
+
 **After all phase tasks, create finalization task:**
 
 Before creating the Finalization task, check if `.ed3d/implementation-plan-guidance.md` exists. If it does, include its absolute path in the task description:
@@ -694,6 +696,7 @@ These are violations of the skill requirements:
 | "I'll skip creating granular tasks, one per phase is enough" | Granular tasks survive compaction. Create NA, NB, NC, ND per phase + Finalization. |
 | "Dependencies are obvious, don't need addBlockedBy" | Task list shows blocked status. Set dependencies explicitly with TaskUpdate. |
 | "Relative paths are fine in task descriptions" | After compaction, context is lost. Use absolute paths so tasks are self-contained. |
+| "I'll paraphrase the task name, same meaning" | NO. Task names are VERBATIM. "and activate relevant skills" triggers behavior post-compaction. |
 | "I know how this library works from training" | Research it. APIs change. Use internet-researcher for docs, remote-code-researcher for internals. |
 | "Docs are probably accurate enough" | Usually yes. But if extending/customizing library behavior, verify with source code. |
 | "I'll clone the repo to check the docs" | No. Use internet-researcher for docs. Only clone (remote-code-researcher) for source code investigation. |
