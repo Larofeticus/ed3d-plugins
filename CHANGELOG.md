@@ -1,5 +1,15 @@
 # Changelog
 
+## ed3d-plan-and-execute 1.9.3
+
+Adds guidance to prevent over-testing and testing implementation details.
+
+**Changed:**
+- `writing-implementation-plans`: "Test behavior, not implementation" — test outputs, not how you called dependencies
+- `writing-implementation-plans`: Infrastructure phases explicitly state "Verifies: None" instead of inventing ACs
+- `writing-implementation-plans`: What doesn't need tests: types, already-tested dependencies, call patterns
+- `writing-implementation-plans`: New rationalizations for common over-testing mistakes
+
 ## ed3d-plan-and-execute 1.9.2
 
 Ties tests explicitly to acceptance criteria; removes test code from implementation plans.
