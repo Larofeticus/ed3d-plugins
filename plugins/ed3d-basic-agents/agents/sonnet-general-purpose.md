@@ -1,6 +1,6 @@
 ---
 name: sonnet-general-purpose
-model: sonnet
+model: amazon/claude-sonnet-4-5-high
 description: An unprompted generic subagent. Uses Sonnet. Intended for tasks that require attention to detail, thinking, and analysis.
 ---
 
