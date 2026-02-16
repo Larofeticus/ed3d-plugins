@@ -5122,3 +5122,27 @@ void process(std::span<int> arr) {
 ```
 
 **When it occurs:** Fixed-size arrays, string operations, manual indexing, off-by-one loops.
+
+## Common mistakes
+
+| Mistake | Fix |
+|---------|-----|
+| "I'll just use new/delete, it's simple" | Use smart pointers (unique_ptr, shared_ptr). Manual memory management is error-prone and exception-unsafe. |
+| "malloc/free is faster than C++ memory management" | Smart pointers have zero overhead compared to raw pointers. Use RAII for both performance and safety. |
+| "I need to mix malloc and delete" | Never mix C allocation (malloc, calloc, realloc) with C++ deallocation (delete). Use new/delete or smart pointers consistently. |
+| "Ignoring return values won't hurt" | Always check return values or use [[nodiscard]] attribute. Ignored errors lead to silent failures and security bugs. |
+| "Swallowing exceptions to avoid crashes" | Catch exceptions only if you can handle them. Swallowing exceptions hides bugs and makes debugging impossible. |
+| "C-style casts work fine" | Use C++ casts (static_cast, const_cast, reinterpret_cast, dynamic_cast). C-style casts hide intent and bypass compiler checks. |
+| "I'll just use const_cast when needed" | Casting away const indicates a design problem. Refactor instead of defeating the type system. |
+| "Implicit conversions are convenient" | Explicit casts clarify intent and prevent silent truncation/overflow. Mark single-argument constructors `explicit`. |
+| "I'll copy vectors instead of moving them" | Use move semantics for return values and function parameters. Unnecessary copies waste memory and CPU. |
+| "Use-after-move is fine, the object still exists" | Moved-from objects are in valid but unspecified state. Never use them again without reinitializing. |
+| "Raw pointers are simpler than smart pointers" | Smart pointers eliminate lifetime management bugs, null pointer dereferences, and memory leaks. Use them by default. |
+| "nullptr checks are always safe" | Null pointer dereferences cause crashes even with checks. Use RAII, smart pointers, and references instead. |
+| "Iterators stay valid after container modification" | Iterators invalidate when containers reallocate. Use stable containers (list, map) or rebuild iterators after modification. |
+| "const correctness slows down coding" | const catches bugs at compile time and enables compiler optimizations. It saves time in the long run. |
+| "Performance premature - optimize later" | Undefined behavior, data races, and exceptions cost far more than micro-optimizations save. Profile before optimizing. |
+| "Global variables simplify parameter passing" | Globals create hidden dependencies, break encapsulation, and cause threading issues. Pass parameters instead. |
+| "Logging everywhere helps debugging" | Excessive logging obscures real problems and slows production code. Log strategically; use debuggers. |
+| "I'll use static initialization for singletons" | Static initialization order is undefined. Use static local variables or lazy initialization instead. |
+| "Virtual destructors aren't always necessary" | Derived classes may have resources. Always make destructors virtual in polymorphic base classes (or use final). |
