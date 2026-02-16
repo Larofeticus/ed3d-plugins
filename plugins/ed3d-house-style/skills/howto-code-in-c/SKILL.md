@@ -510,3 +510,393 @@ load_config();  // Warning: ignoring return value
 | **Real-time/embedded** | Error codes | Exceptions often disabled |
 
 **Key principle:** Make errors hard to ignore. Exceptions can't be ignored. `[[nodiscard]]` prevents ignoring optional/expected. Error codes require explicit checks (easy to forget).
+
+## Type system
+
+Modern C and C++ provide robust type systems to catch errors at compile time. Use type safety features to express intent and prevent undefined behavior.
+
+### Fundamental types
+
+**C and C++ share fundamental types:**
+
+```c
+// Integers - C style
+#include <stdint.h>
+int count;                      // At least 16 bits
+int32_t value;                  // Exactly 32 bits (guaranteed)
+uint64_t big_count;             // Unsigned 64-bit
+ptrdiff_t pointer_difference;   // Signed integer for pointer math
+
+// Floating point
+float single_precision;         // Single precision (32-bit)
+double double_precision;        // Double precision (64-bit)
+long double extended;           // Extended precision (varies)
+
+// Characters
+char character;                 // May be signed or unsigned (ambiguous!)
+signed char signed_char;        // Always signed
+unsigned char byte;             // Always unsigned (for binary data)
+
+// Booleans - C99+
+#include <stdbool.h>
+bool flag;                      // C99: true or false
+_Bool c_bool;                   // Core C type
+
+// Void
+void* generic_pointer;          // Generic pointer
+// GOOD: Use for C FFI
+typedef void (*function_ptr)(int, int);
+```
+
+**C++ improvements:**
+
+```cpp
+// Fixed-width types (C++11)
+#include <cstdint>
+uint8_t byte;                   // Always 8 bits unsigned
+int64_t big_signed;             // Always 64 bits signed
+
+// Strongly typed booleans
+bool modern_flag = true;        // Clear intent
+
+// Prefer std containers over raw arrays
+std::vector<int> numbers;       // Dynamic array
+std::array<int, 10> fixed;      // Fixed-size array with bounds checking
+std::string text;               // Dynamic string
+```
+
+**C vs C++ decision framework:**
+
+| Type | C Convention | C++ Convention | When to Use Each |
+|------|-------------|----------------|------------------|
+| Array | `int arr[10]` | `std::array<int, 10>` (fixed) or `std::vector<int>` (dynamic) | C: FFI/interop. C++: Application code |
+| String | `const char* str` or `char buf[256]` | `std::string` or `std::string_view` | C: Low-level parsing. C++: All string data |
+| Integer | `int`, `long`, `int32_t` | `int`, `int32_t`, or use width-specific types | C: Portable code. C++: Same, use `<cstdint>` |
+| Boolean | `_Bool` (C99) or `int` (older) | `bool` | C: Use C99+. C++: Always use `bool` |
+
+### Type safety: enum class vs enum
+
+**C-style enums pollute namespace:**
+
+```c
+// BAD: C style - pollutes namespace
+enum color {
+    RED = 0,
+    GREEN = 1,
+    BLUE = 2
+};
+enum size {
+    RED = 0,  // ERROR: RED already defined!
+    SMALL = 1
+};
+
+// Workaround with prefixes
+enum color_t {
+    COLOR_RED,
+    COLOR_GREEN,
+    COLOR_BLUE
+};
+enum size_t {
+    SIZE_SMALL,
+    SIZE_MEDIUM,
+    SIZE_LARGE
+};
+```
+
+**C++ strongly typed enums (enum class) are superior:**
+
+```cpp
+// GOOD: C++ enum class - scoped and type-safe
+enum class Color {
+    Red = 0,      // PascalCase values in enum class
+    Green = 1,
+    Blue = 2
+};
+
+enum class Size {
+    Small = 0,
+    Medium = 1,
+    Large = 2
+};
+
+// Usage requires explicit scope
+Color my_color = Color::Red;      // Must use Color::
+Size my_size = Size::Small;       // Can't accidentally mix enums
+
+// Can specify underlying type
+enum class Status : uint8_t {
+    Pending = 0,
+    Running = 1,
+    Done = 2
+};
+
+// Scoped enums prevent implicit conversion
+// This code won't compile (type safety!)
+if (my_color == my_size) { }  // ERROR: different types
+
+// vs C enum (would compile!)
+if ((enum color_t)my_color == (enum size_t)my_size) { }  // Danger!
+```
+
+### Type aliases: using vs typedef
+
+**Modern C++ using is clearer:**
+
+```cpp
+// OLD: typedef (C compatible)
+typedef std::vector<int> IntVector;
+typedef int (*FunctionPtr)(double);
+typedef std::map<std::string, int> StringToIntMap;
+
+// GOOD: using (C++11+, clearer template syntax)
+using IntVector = std::vector<int>;
+using FunctionPtr = int(*)(double);
+using StringToIntMap = std::map<std::string, int>;
+
+// using excels with templates
+template<typename T>
+using Vector = std::vector<T>;  // Template alias
+
+// BAD: with typedef
+// Can't do: template typedef
+
+// Semantic aliases improve readability
+using UserId = int;
+using Timestamp = std::chrono::system_clock::time_point;
+
+// vs
+typedef int UserId;
+typedef std::chrono::system_clock::time_point Timestamp;
+// Less clear with typedef for complex types
+```
+
+### Modern C++ features: auto, structured bindings, templates
+
+**auto - type deduction (C++11+)**
+
+```cpp
+// GOOD: auto for complex types
+auto iter = vector.begin();                    // Deduced as vector<int>::iterator
+auto result = calculate_value();               // Deduced from return type
+auto pair = std::make_pair(1, "hello");        // Deduced as pair<int, const char*>
+
+// GOOD: auto simplifies refactoring
+std::map<std::string, std::vector<int>> data;
+for (auto& [key, values] : data) {            // Type deduced from container
+    // Process key and values
+}
+
+// BAD: Avoid auto if type isn't obvious
+auto x = 5;                    // Is this int? long? Could be clearer
+auto func = [](int a) { return a * 2; };      // Type hidden
+
+// GOOD: auto with clear context
+auto count = get_item_count();   // Function name clarifies intent
+auto total = sum_values(items);  // Purpose clear from function
+```
+
+**Structured bindings (C++17)**
+
+```cpp
+// GOOD: Unpack tuple/pair/aggregate
+auto [key, value] = get_pair();               // Unpacks std::pair
+auto [x, y, z] = get_coordinates();           // Unpacks struct or tuple
+auto [status, message] = validate_input();    // Unpacks std::pair
+
+// With const
+const auto [key, value] = map_entry;          // Const references
+
+// In loops
+std::vector<std::pair<std::string, int>> pairs;
+for (auto& [name, count] : pairs) {
+    std::cout << name << ": " << count << std::endl;
+}
+
+// BAD: Without structured bindings
+auto pair = get_pair();
+auto key = std::get<0>(pair);
+auto value = std::get<1>(pair);  // Verbose and unclear
+
+// Prevents accidental copies
+for (auto [key, value] : map) { }        // Copies key and value
+for (auto& [key, value] : map) { }       // References - preferred
+```
+
+**Templates and concepts**
+
+```cpp
+// GOOD: Generic template
+template<typename T>
+T add(T a, T b) {
+    return a + b;
+}
+
+// C++20: Concepts enforce type requirements
+template<typename T>
+concept Addable = requires(T a, T b) {
+    { a + b } -> std::convertible_to<T>;
+};
+
+template<Addable T>
+T safe_add(T a, T b) {  // Only accepts types that support +
+    return a + b;
+}
+
+// Usage
+int sum1 = safe_add(1, 2);                    // OK: int is Addable
+double sum2 = safe_add(1.5, 2.5);            // OK: double is Addable
+// safe_add("hello", "world");                // ERROR: string requires concept_to_string
+
+// BAD: Without concepts (compiles but error far from usage)
+template<typename T>
+T bad_add(T a, T b) {
+    return a + b;                             // Error if T doesn't support +
+}
+// bad_add(std::vector<int>{}, std::vector<int>{});  // Error: deeply nested
+```
+
+### Type qualifiers: const, volatile, mutable, static
+
+**const - compile-time enforcement**
+
+```cpp
+// GOOD: const for read-only data
+const int MAX_ITEMS = 100;                    // Compile-time constant
+const char* readonly_string = "hello";        // Pointer to const string
+
+// GOOD: const member function (doesn't modify object)
+class Counter {
+    int count = 0;
+public:
+    int get_count() const {                   // Can't modify this->count
+        return count;
+    }
+
+    void increment() {                        // Can modify this->count
+        count++;
+    }
+};
+
+// GOOD: const reference (no copy overhead, can't modify)
+void process_data(const std::vector<int>& data) {
+    // Can read data, can't modify
+}
+
+// const pointer semantics
+int x = 5;
+int* ptr = &x;                                // Pointer to non-const int
+const int* const_ptr = &x;                    // Pointer to const int (can't modify through ptr)
+int* const const_ptr_var = &x;                // Const pointer to int (can't change ptr, can modify int)
+const int* const const_const = &x;            // Const pointer to const int
+
+// BAD: mutable to bypass const (use sparingly)
+class Cache {
+    mutable std::map<int, int> cache;         // Mutable despite const function
+public:
+    int lookup(int key) const {
+        if (!cache.count(key)) {
+            cache[key] = expensive_compute(key);
+        }
+        return cache[key];
+    }
+};
+```
+
+**volatile - prevent compiler optimization**
+
+```cpp
+// GOOD: volatile for hardware registers or shared memory
+volatile int hardware_register;               // Compiler won't cache in register
+volatile bool shutdown_flag;                  // External signal changes
+
+// BAD: Misuse for thread synchronization (use std::atomic)
+volatile int shared_counter;                  // WRONG! Not thread-safe
+shared_counter++;                             // Race condition even with volatile
+
+// GOOD: Thread synchronization
+std::atomic<int> atomic_counter;              // Thread-safe
+atomic_counter++;
+```
+
+**static - linkage and storage**
+
+```cpp
+// File scope - internal linkage (C)
+static int internal_counter = 0;              // Visible only in this translation unit
+
+// C++: Use unnamed namespace instead
+namespace {
+    int internal_counter = 0;                 // Also internal, but C++ style
+}
+
+// Static member - shared across all instances
+class Logger {
+    static int message_count;                 // Shared by all Logger instances
+public:
+    void log(const std::string& msg) {
+        message_count++;
+    }
+    static int get_message_count() {
+        return message_count;
+    }
+};
+int Logger::message_count = 0;                // Definition with initializer
+```
+
+### Containers and aggregates
+
+**Prefer std containers over C arrays:**
+
+```cpp
+// BAD: C-style arrays (no bounds checking)
+int arr[10];
+arr[15] = 5;                                  // Buffer overflow! Undefined behavior
+
+// GOOD: std::array (fixed size with bounds)
+std::array<int, 10> arr;
+// arr[15] = 5;                               // std::out_of_range in at()
+arr.at(15);                                   // Safe: throws exception
+arr[15];                                      // Unsafe: no bounds check
+
+// GOOD: std::vector (dynamic size)
+std::vector<int> dynamic;
+dynamic.push_back(1);
+dynamic.push_back(2);
+// Bounds checking with at()
+dynamic.at(10);                               // Exception if out of range
+
+// Structs vs Classes
+struct POD {                                  // Plain Old Data - no custom behavior
+    int x;
+    int y;
+    std::string name;
+};
+
+class Widget {                                // Custom behavior, encapsulation
+private:
+    int value_;
+public:
+    Widget(int v) : value_(v) { }
+    int get_value() const { return value_; }
+    void set_value(int v) { value_ = v; }
+};
+
+// GOOD: Aggregates for simple data
+auto point = POD{1, 2, "origin"};             // Aggregate initialization
+auto [x, y, name] = point;                    // Destructuring
+```
+
+### Type system decision framework
+
+| Scenario | Use | Rationale |
+|----------|-----|-----------|
+| **Enumeration with multiple values** | `enum class` (C++) or prefixed enum (C) | Type-safe, prevents accidental mixing |
+| **Complex type in multiple places** | `using` alias (C++) or `typedef` (C) | Improves readability and refactoring |
+| **Array of fixed size** | `std::array<T, N>` | Bounds checking, RAII semantics |
+| **Array of dynamic size** | `std::vector<T>` | Automatic growth, RAII semantics |
+| **Read-only function parameter** | `const T&` | No copy overhead, no modifications |
+| **Integer width varies by platform** | `int32_t`, `uint64_t` from `<cstdint>` | Portable, explicit width |
+| **Generic algorithm** | Template or C++20 concept | Compile-time type checking |
+| **Hardware register or memory-mapped I/O** | `volatile` | Prevents compiler optimization |
+| **Shared variable in threads** | `std::atomic<T>` | Thread-safe operations |
+| **Type-only information (no runtime cost)** | `constexpr` | Zero-overhead abstraction |
