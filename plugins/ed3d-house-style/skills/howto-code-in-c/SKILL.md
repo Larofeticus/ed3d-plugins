@@ -3604,11 +3604,11 @@ ms_print massif.out.*
 ```
 
 **Choosing a tool:**
-- **Need CPU hotspots?** → Use `perf` on Linux (most detailed)
-- **Need call graph?** → Use `gprof` (simpler but less accurate)
-- **Need cache analysis?** → Use `perf` with cache event counting
-- **Need cache visualization?** → Use `valgrind cachegrind`
-- **Need memory profile?** → Use `valgrind massif`
+- **Need CPU hotspots?** -> Use `perf` on Linux (most detailed)
+- **Need call graph?** -> Use `gprof` (simpler but less accurate)
+- **Need cache analysis?** -> Use `perf` with cache event counting
+- **Need cache visualization?** -> Use `valgrind cachegrind`
+- **Need memory profile?** -> Use `valgrind massif`
 
 ### Memory layout and cache efficiency
 
@@ -3814,7 +3814,7 @@ public:
 ```
 
 **Performance mistake checklist:**
-- Did you profile before optimizing? (No → stop)
-- Did you measure improvement? (No → revert)
-- Is the code now harder to understand? (Yes → reconsider)
-- Is this the hottest bottleneck? (No → optimize something else)
+- Did you profile before optimizing? (No -> stop)
+- Did you measure improvement? (No -> revert)
+- Is the code now harder to understand? (Yes -> reconsider)
+- Is this the hottest bottleneck? (No -> optimize something else)
