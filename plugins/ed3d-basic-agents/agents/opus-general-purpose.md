@@ -1,6 +1,6 @@
 ---
 name: opus-general-purpose
-model: opus
+model: amazon/claude-opus-4-6-high
 description: An unprompted generic subagent. Uses Opus. Intended for tasks that require deep reasoning, complex analysis, or nuanced judgment.
 ---
 
