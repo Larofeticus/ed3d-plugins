@@ -3818,3 +3818,382 @@ public:
 - Did you measure improvement? (No -> revert)
 - Is the code now harder to understand? (Yes -> reconsider)
 - Is this the hottest bottleneck? (No -> optimize something else)
+
+## Testing strategies
+
+Testing is the foundation of reliable C++ code. This section covers unit testing frameworks, test organization patterns, memory testing with sanitizers and Valgrind, error handling verification, and mocking strategies.
+
+### Framework selection: GoogleTest and Catch2
+
+Two frameworks dominate modern C++ testing. Choose based on your project needs:
+
+**GoogleTest (Google's framework):**
+- Comprehensive assertion library
+- Built-in mocking with GoogleMock
+- Best for large projects with complex dependencies
+- Mature, widely adopted in industry
+- Some verbosity in setup
+
+```cpp
+#include <gtest/gtest.h>
+#include <gmock/gmock.h>
+
+class CalculatorTest : public ::testing::Test {
+protected:
+    Calculator calc;
+};
+
+TEST_F(CalculatorTest, AddPositiveNumbers) {
+    EXPECT_EQ(calc.add(2, 3), 5);
+    EXPECT_EQ(calc.add(0, 0), 0);
+}
+
+TEST_F(CalculatorTest, AddNegativeNumbers) {
+    EXPECT_EQ(calc.add(-2, -3), -5);
+    EXPECT_EQ(calc.add(5, -3), 2);
+}
+```
+
+**Catch2 (header-only framework):**
+- Minimal, elegant syntax
+- Single header file inclusion
+- No external dependencies
+- Excellent documentation
+- Good for small to medium projects
+
+```cpp
+#define CATCH_CONFIG_MAIN
+#include <catch2/catch.hpp>
+
+TEST_CASE("Addition", "[calculator]") {
+    Calculator calc;
+
+    REQUIRE(calc.add(2, 3) == 5);
+    REQUIRE(calc.add(0, 0) == 0);
+    REQUIRE(calc.add(-2, -3) == -5);
+}
+
+TEST_CASE("Subtraction", "[calculator]") {
+    Calculator calc;
+
+    REQUIRE(calc.subtract(5, 3) == 2);
+    REQUIRE(calc.subtract(0, 0) == 0);
+}
+```
+
+**Framework comparison:**
+
+| Aspect | GoogleTest | Catch2 |
+|--------|-----------|--------|
+| Learning curve | Steeper | Gentle |
+| Mocking support | Built-in (GoogleMock) | Third-party (Fakeit, etc.) |
+| Dependencies | External | Header-only |
+| Setup complexity | Moderate | Minimal |
+| Assertion flexibility | Comprehensive | Expressive |
+
+### Unit testing patterns: ARRANGE-ACT-ASSERT
+
+Every test follows the same structure: set up state, perform action, verify result.
+
+```cpp
+TEST_F(FileReaderTest, ReadsValidJsonFile) {
+    // ARRANGE: Set up test data
+    std::string test_file = "/tmp/test.json";
+    std::ofstream out(test_file);
+    out << R"({"name": "Alice", "age": 30})";
+    out.close();
+
+    FileReader reader;
+
+    // ACT: Perform the operation
+    nlohmann::json data = reader.read_json(test_file);
+
+    // ASSERT: Verify the result
+    EXPECT_EQ(data["name"], "Alice");
+    EXPECT_EQ(data["age"], 30);
+}
+```
+
+**Test fixtures reduce repetition:**
+
+```cpp
+class DataProcessorTest : public ::testing::Test {
+protected:
+    DataProcessor processor;
+    std::vector<int> sample_data = {1, 2, 3, 4, 5};
+
+    void SetUp() override {
+        // Called before each test
+        processor.initialize();
+    }
+
+    void TearDown() override {
+        // Called after each test - cleanup resources
+        processor.cleanup();
+    }
+};
+
+TEST_F(DataProcessorTest, ComputesSum) {
+    int result = processor.sum(sample_data);
+    EXPECT_EQ(result, 15);
+}
+
+TEST_F(DataProcessorTest, ComputesAverage) {
+    double result = processor.average(sample_data);
+    EXPECT_DOUBLE_EQ(result, 3.0);
+}
+```
+
+### Testing memory management: Valgrind and sanitizers
+
+Memory bugs are silent killers. Test for leaks and corruption every run.
+
+**AddressSanitizer (ASan) - Detects memory errors at runtime:**
+
+```bash
+# Compile with ASan
+clang++ -fsanitize=address -g -O1 your_program.cpp -o your_program
+
+# Run program - ASan reports errors immediately
+./your_program
+# Output example: ERROR: AddressSanitizer: heap-buffer-overflow
+```
+
+**MemorySanitizer (MSan) - Detects use of uninitialized memory:**
+
+```bash
+# Compile with MSan
+clang++ -fsanitize=memory -g -O1 your_program.cpp -o your_program
+
+./your_program
+# Reports uninitialized variable access
+```
+
+**ThreadSanitizer (TSan) - Detects data races in multithreaded code:**
+
+```bash
+# Compile with TSan
+clang++ -fsanitize=thread -g -O1 your_program.cpp -o your_program
+
+./your_program
+# Reports concurrent access to same data without synchronization
+```
+
+**UndefinedBehaviorSanitizer (UBSan) - Detects undefined behavior:**
+
+```bash
+# Compile with UBSan
+clang++ -fsanitize=undefined -g -O1 your_program.cpp -o your_program
+
+./your_program
+# Reports integer overflow, null dereference, etc.
+```
+
+**Valgrind - Comprehensive memory debugging:**
+
+```bash
+# Detect memory leaks
+valgrind --leak-check=full --show-leak-kinds=all ./your_program
+
+# Example output:
+# ==12345== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+# ==12345== LEAK SUMMARY:
+# ==12345==    definitely lost: 0 bytes in 0 blocks
+# ==12345==    indirectly lost: 0 bytes in 0 blocks
+```
+
+**Integrating sanitizers in CI:**
+
+```bash
+# Test script that runs with all sanitizers
+#!/bin/bash
+set -e
+
+echo "Building with AddressSanitizer..."
+clang++ -fsanitize=address -g tests.cpp -o tests_asan
+./tests_asan
+
+echo "Building with MemorySanitizer..."
+clang++ -fsanitize=memory -g tests.cpp -o tests_msan
+./tests_msan
+
+echo "Building with ThreadSanitizer..."
+clang++ -fsanitize=thread -g tests.cpp -o tests_tsan
+./tests_tsan
+
+echo "Running Valgrind..."
+valgrind --leak-check=full ./tests_asan
+
+echo "All memory tests passed!"
+```
+
+### Testing error handling: Exceptions and error codes
+
+Test both success and failure paths.
+
+**Testing exception handling:**
+
+```cpp
+TEST(DivisionTest, ThrowsOnZeroDivisor) {
+    Calculator calc;
+
+    // EXPECT_THROW: Verify exception is thrown
+    EXPECT_THROW(calc.divide(10, 0), std::invalid_argument);
+
+    // EXPECT_NO_THROW: Verify no exception
+    EXPECT_NO_THROW(calc.divide(10, 2));
+}
+
+TEST(DivisionTest, ExceptionMessage) {
+    Calculator calc;
+
+    try {
+        calc.divide(10, 0);
+        FAIL() << "Expected std::invalid_argument";
+    } catch (const std::invalid_argument& e) {
+        EXPECT_THAT(e.what(), ::testing::HasSubstr("division by zero"));
+    }
+}
+```
+
+**Testing error codes:**
+
+```cpp
+TEST(FileOperationTest, ReturnErrorOnMissingFile) {
+    FileHandler handler;
+
+    auto result = handler.read_file("/nonexistent/path");
+
+    // Verify error code, not exception
+    EXPECT_FALSE(result);
+    EXPECT_EQ(result.error(), ErrorCode::FileNotFound);
+}
+
+TEST(FileOperationTest, SucceedsWithValidFile) {
+    FileHandler handler;
+
+    auto result = handler.read_file("/tmp/test.txt");
+
+    EXPECT_TRUE(result);
+    EXPECT_EQ(result.value(), "file contents");
+}
+```
+
+### Mocking and dependency injection
+
+Use mocks to isolate components and test interfaces.
+
+**GoogleMock for dependency injection:**
+
+```cpp
+// Define mock interface
+class MockDatabase : public Database {
+public:
+    MOCK_METHOD(std::optional<User>, get_user, (int id), (override));
+    MOCK_METHOD(bool, save_user, (const User& user), (override));
+};
+
+// Test service that depends on database
+class UserServiceTest : public ::testing::Test {
+protected:
+    MockDatabase mock_db;
+    UserService service{mock_db};
+};
+
+TEST_F(UserServiceTest, FetchesUserFromDatabase) {
+    User expected_user{1, "Alice", "alice@example.com"};
+
+    // Set expectation: mock_db.get_user(1) should return expected_user
+    EXPECT_CALL(mock_db, get_user(1))
+        .WillOnce(::testing::Return(expected_user));
+
+    auto user = service.get_user(1);
+
+    EXPECT_EQ(user.id, 1);
+    EXPECT_EQ(user.name, "Alice");
+}
+
+TEST_F(UserServiceTest, HandlesUserNotFound) {
+    // Set expectation: return empty optional
+    EXPECT_CALL(mock_db, get_user(999))
+        .WillOnce(::testing::Return(std::nullopt));
+
+    auto user = service.get_user(999);
+
+    EXPECT_FALSE(user);
+}
+```
+
+**Dependency injection without mocks:**
+
+```cpp
+class DataProcessor {
+    std::unique_ptr<DataSource> source_;
+public:
+    explicit DataProcessor(std::unique_ptr<DataSource> src)
+        : source_(std::move(src)) {}
+
+    void process() {
+        auto data = source_->fetch();
+        // Process data...
+    }
+};
+
+// In tests, inject test implementation
+class MockDataSource : public DataSource {
+public:
+    std::vector<int> fetch() override {
+        return {1, 2, 3};  // Controlled test data
+    }
+};
+
+TEST(DataProcessorTest, ProcessesTestData) {
+    auto mock_source = std::make_unique<MockDataSource>();
+    DataProcessor processor(std::move(mock_source));
+
+    // Processor uses test data
+    processor.process();
+    // Assert results...
+}
+```
+
+### Running tests in CI
+
+Integrate testing into continuous integration pipelines:
+
+```bash
+# CMakeLists.txt example
+cmake_minimum_required(VERSION 3.14)
+project(MyProject)
+
+# Enable testing
+enable_testing()
+
+# Add GoogleTest
+include(FetchContent)
+FetchContent_Declare(
+    googletest
+    URL https://github.com/google/googletest/archive/main.zip
+)
+FetchContent_MakeAvailable(googletest)
+
+# Add tests
+add_executable(my_tests test.cpp)
+target_link_libraries(my_tests gtest gtest_main)
+
+# Register tests
+add_test(NAME AllTests COMMAND my_tests)
+
+# Run with sanitizers
+if(ENABLE_SANITIZERS)
+    target_compile_options(my_tests PRIVATE
+        -fsanitize=address,undefined
+        -g -O1
+    )
+    target_link_options(my_tests PRIVATE
+        -fsanitize=address,undefined
+    )
+endif()
+```
+
+For comprehensive testing reference material, see [testing-cpp.md](./testing-cpp.md).
