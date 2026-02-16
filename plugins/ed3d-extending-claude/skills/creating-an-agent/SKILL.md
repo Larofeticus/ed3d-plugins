@@ -179,7 +179,7 @@ What the agent should NOT do:
 
 Specify in frontmatter:
 ```yaml
-model: opus
+model: amazon/claude-opus-4-6-high
 ```
 
 ## Testing Agents
@@ -223,7 +223,7 @@ If agent fails:
 name: code-reviewer
 description: Use when reviewing code changes, pull requests, or verifying implementation quality - analyzes for bugs, style issues, and best practices
 tools: Read, Grep, Glob, Bash
-model: opus
+model: amazon/claude-opus-4-6-high
 ---
 
 # Code Reviewer
