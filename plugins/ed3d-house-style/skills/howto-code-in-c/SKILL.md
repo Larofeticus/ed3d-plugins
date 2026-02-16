@@ -4021,6 +4021,10 @@ echo "Building with ThreadSanitizer..."
 clang++ -fsanitize=thread -g tests.cpp -o tests_tsan
 ./tests_tsan
 
+echo "Building with UndefinedBehaviorSanitizer..."
+clang++ -fsanitize=undefined -g tests.cpp -o tests_ubsan
+./tests_ubsan
+
 echo "Running Valgrind..."
 valgrind --leak-check=full ./tests_asan
 
