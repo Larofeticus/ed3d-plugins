@@ -4463,3 +4463,662 @@ Common Boost libraries:
 | GoogleMock | Mock-centric | Primary focus | Requires GoogleTest | Dependency injection testing |
 
 Both GoogleTest and Catch2 are production-ready. Choose based on project complexity and team preference.
+
+## Sharp edges
+
+Runtime hazards and undefined behavior that the compiler won't catch. Know these cold.
+
+### Undefined behavior
+
+**Undefined behavior (UB) means the program can do anything—including appearing to work correctly until it doesn't.**
+
+The C++ standard imposes no requirements on what happens when undefined behavior occurs. The compiler may optimize assuming it never happens, leading to shocking results.
+
+```cpp
+// BAD: signed integer overflow is undefined behavior
+int x = INT_MAX;
+x++;  // undefined behavior—may wrap, may not, may crash
+
+// BAD: accessing out-of-bounds memory
+std::vector<int> v = {1, 2, 3};
+int value = v[10];  // undefined behavior—may return garbage, may crash
+
+// BAD: returning reference to local variable
+int& dangling() {
+  int local = 5;
+  return local;  // undefined behavior—reference to destroyed object
+}
+
+// GOOD: check bounds before access
+if (index < v.size()) {
+  int value = v[index];
+}
+
+// GOOD: use at() which throws on out-of-bounds
+try {
+  int value = v.at(index);
+} catch (const std::out_of_range&) {
+  // handle error
+}
+
+// GOOD: return value, not reference to local
+int getValue() {
+  int local = 5;
+  return local;  // safe—returns copy
+}
+```
+
+**Common sources of UB:**
+- Out-of-bounds memory access
+- Use-after-free
+- Signed integer overflow
+- Null pointer dereference
+- Data races in concurrent code
+- Type violations (casting to incompatible types)
+- Uninitialized variables
+
+Use sanitizers (AddressSanitizer, UndefinedBehaviorSanitizer) in every build to catch these.
+
+### Pointer arithmetic dangers
+
+**Manual pointer arithmetic is the source of countless buffer overflows and out-of-bounds access.**
+
+```cpp
+// BAD: assumes array size without bounds checking
+void process(int* arr, int n) {
+  for (int i = 0; i <= n; ++i) {  // off-by-one error
+    arr[i] = 0;  // reads/writes beyond array
+  }
+}
+
+// BAD: pointer math can easily overflow
+char buffer[10];
+char* ptr = buffer;
+ptr += 1000;  // now pointing to random memory
+
+// BAD: mixing different array types
+int arr[5];
+int* p = arr;
+p += 10;  // now wildly out of bounds
+int x = *p;  // undefined behavior
+
+// GOOD: use vector which manages bounds
+void process(std::vector<int>& arr) {
+  for (int i = 0; i < arr.size(); ++i) {
+    arr[i] = 0;  // bounds checked by vector
+  }
+}
+
+// GOOD: use iterators which are safer than raw pointers
+void process(std::vector<int>& arr) {
+  for (auto& elem : arr) {
+    elem = 0;  // no pointer arithmetic needed
+  }
+}
+
+// GOOD: use std::span for fixed-size arrays (C++20)
+void process(std::span<int> arr) {
+  for (int i = 0; i < arr.size(); ++i) {
+    arr[i] = 0;  // span knows the size
+  }
+}
+```
+
+**When it occurs:** C-style arrays, pointer passing without size, manual offset calculation.
+
+### Iterator invalidation
+
+**Many STL operations invalidate existing iterators, leading to use-after-free style bugs.**
+
+```cpp
+// BAD: vector reallocation invalidates all iterators
+std::vector<int> v = {1, 2, 3};
+auto it = v.begin();
+v.push_back(4);  // may reallocate, invalidating 'it'
+*it = 10;  // undefined behavior—'it' may point to freed memory
+
+// BAD: erasing during iteration
+std::vector<int> v = {1, 2, 3, 4};
+for (auto it = v.begin(); it != v.end(); ++it) {
+  if (*it == 2) {
+    v.erase(it);  // invalidates 'it'
+    // ++it in loop header is now invalid
+  }
+}
+
+// BAD: map insertion can invalidate iterators
+std::map<int, int> m;
+for (auto it = m.begin(); it != m.end(); ++it) {
+  m[10] = 20;  // may invalidate 'it' in some contexts
+}
+
+// GOOD: reserve capacity before loop to prevent reallocation
+std::vector<int> v;
+v.reserve(1000);  // allocate upfront
+for (int i = 0; i < 1000; ++i) {
+  v.push_back(i);  // no reallocation
+}
+
+// GOOD: use erase-remove idiom
+std::vector<int> v = {1, 2, 3, 4};
+auto new_end = std::remove(v.begin(), v.end(), 2);
+v.erase(new_end, v.end());
+
+// GOOD: collect indices to erase, then erase in reverse order
+std::vector<int> v = {1, 2, 3, 4};
+std::vector<size_t> to_erase;
+for (size_t i = 0; i < v.size(); ++i) {
+  if (v[i] == 2) {
+    to_erase.push_back(i);
+  }
+}
+for (auto it = to_erase.rbegin(); it != to_erase.rend(); ++it) {
+  v.erase(v.begin() + *it);
+}
+
+// GOOD: use erase return value (C++11)
+for (auto it = v.begin(); it != v.end(); ) {
+  if (*it == 2) {
+    it = v.erase(it);  // erase returns next valid iterator
+  } else {
+    ++it;
+  }
+}
+```
+
+**When it occurs:** After push_back/insert on vector, after erase on any container, after insert/erase on map, after reallocation.
+
+### Move semantics gotchas
+
+**Moved-from objects are in a valid but unspecified state. Using them without knowing their state is a trap.**
+
+```cpp
+// BAD: use after move
+std::vector<int> v1 = {1, 2, 3};
+std::vector<int> v2 = std::move(v1);
+v1.push_back(4);  // v1 may be empty, may cause memory errors
+
+// BAD: moving in loop creates dangling references
+std::vector<std::string> strs = {"a", "b", "c"};
+for (auto& s : strs) {
+  process(std::move(s));
+  // s is now in moved-from state, destructed at end of loop
+}
+
+// BAD: forgot to mark move constructor as noexcept
+class MyClass {
+  std::vector<int> data;
+public:
+  MyClass(MyClass&& other) {  // not noexcept!
+    data = std::move(other.data);
+  }
+};
+// This may use copy instead of move in some STL operations
+
+// GOOD: don't use moved-from objects without resetting
+std::vector<int> v1 = {1, 2, 3};
+std::vector<int> v2 = std::move(v1);
+v1.clear();  // ensure v1 is in known state
+
+// GOOD: move semantics for parameters and returns
+class Container {
+  std::vector<int> data;
+public:
+  // Accept rvalue reference to allow move
+  void setData(std::vector<int>&& d) {
+    data = std::move(d);  // d is being moved away, safe
+  }
+
+  // Return value optimization or move constructor
+  std::vector<int> getData() && {
+    return std::move(data);  // safe to move out of temporary
+  }
+};
+
+// GOOD: mark move operations noexcept
+class MyClass {
+  std::vector<int> data;
+public:
+  MyClass(MyClass&& other) noexcept {
+    data = std::move(other.data);
+  }
+  MyClass& operator=(MyClass&& other) noexcept {
+    data = std::move(other.data);
+    return *this;
+  }
+};
+```
+
+**When it occurs:** After std::move(), in moved-from objects, using objects as move sources multiple times.
+
+### Static initialization order fiasco
+
+**Global and static objects are initialized in undefined order across translation units, causing initialization-time failures.**
+
+```cpp
+// file1.cpp
+#include <iostream>
+
+extern int globalCounter;  // defined in file2.cpp
+
+class Logger {
+public:
+  Logger() {
+    std::cout << "Logger initialized, counter=" << globalCounter << std::endl;
+  }
+};
+
+Logger logger;  // order relative to file2's globalCounter is undefined
+
+// file2.cpp
+int globalCounter = 42;
+
+// At runtime, either globalCounter may be 0 (not yet initialized)
+// or Logger may be initialized before globalCounter exists
+
+// BAD: relying on initialization order
+std::vector<Config>& getConfigs() {
+  static std::vector<Config> configs = initializeConfigs();
+  return configs;
+}
+
+std::vector<Handler>& getHandlers() {
+  static std::vector<Handler> handlers = initializeHandlers(getConfigs());
+  // undefined if getConfigs() hasn't been called yet
+}
+
+// GOOD: use function-local statics (Meyer's singleton)
+std::vector<Config>& getConfigs() {
+  static std::vector<Config> configs = initializeConfigs();
+  return configs;
+}
+
+std::vector<Handler>& getHandlers() {
+  static std::vector<Handler> handlers = initializeHandlers(getConfigs());
+  // thread-safe, guaranteed initialized in order
+  return handlers;
+}
+
+// GOOD: avoid global/static objects, use explicit initialization
+class System {
+  std::vector<Config> configs;
+  std::vector<Handler> handlers;
+public:
+  System() : configs(initializeConfigs()), handlers(initializeHandlers(configs)) {}
+};
+```
+
+**When it occurs:** Multiple translation units with global/static object initialization, circular dependencies.
+
+### Type punning and aliasing violations
+
+**Reinterpreting memory as a different type violates strict aliasing rules and causes undefined behavior.**
+
+```cpp
+// BAD: type punning with unions
+union PunValue {
+  int intVal;
+  float floatVal;
+};
+
+PunValue pun;
+pun.intVal = 0x3f800000;
+float f = pun.floatVal;  // technically works but fragile
+
+// BAD: casting between unrelated pointers
+int x = 42;
+float* fp = reinterpret_cast<float*>(&x);
+*fp = 3.14f;  // undefined behavior—violates strict aliasing
+
+// BAD: assuming pointer size relationships
+void* ptr = malloc(8);
+int* ip = (int*)ptr;
+short* sp = (short*)ptr;
+*ip = 100;
+*sp = 50;  // both pointers alias same memory, undefined behavior
+
+// GOOD: use std::memcpy for byte-level access
+int x = 0x3f800000;
+float f;
+std::memcpy(&f, &x, sizeof(f));  // safe byte reinterpretation
+
+// GOOD: use std::bit_cast (C++20)
+int x = 0x3f800000;
+float f = std::bit_cast<float>(x);  // type-safe, safe aliasing
+
+// GOOD: if you must use pointers, use unsigned char* for byte access
+void* ptr = malloc(8);
+unsigned char* bytes = static_cast<unsigned char*>(ptr);
+bytes[0] = 100;  // safe byte-level access
+```
+
+**When it occurs:** Casting pointer types, using unions for type conversion, assuming memory layouts.
+
+### Integer promotions and conversions
+
+**Signed/unsigned mixing and implicit conversions cause silent bugs and overflow.**
+
+```cpp
+// BAD: comparing signed and unsigned
+std::vector<int> v = {1, 2, 3};
+int count = 3;
+if (count < v.size()) {  // size() returns size_t (unsigned)
+  // count is implicitly converted to unsigned—may behave unexpectedly
+}
+
+// BAD: signed integer overflow (undefined behavior)
+int x = INT_MAX;
+x += 1;  // undefined behavior
+
+// BAD: losing bits in conversion
+long long big = 0x123456789ABCDEF0LL;
+int small = big;  // high bits silently discarded
+
+// BAD: unsigned underflow wraps around
+unsigned int u = 0;
+u -= 1;  // u is now UINT_MAX
+
+// GOOD: explicit type conversions
+size_t sz = v.size();
+int count = static_cast<int>(sz);
+if (count < 0 || static_cast<size_t>(count) < v.size()) {
+  // explicitly handle size type mismatch
+}
+
+// GOOD: avoid signed overflow with checks
+if (x < INT_MAX) {
+  x++;
+}
+
+// GOOD: use appropriate types
+unsigned int u = getUnsignedValue();
+int s = getSignedValue();
+if (u > INT_MAX || static_cast<int>(u) < s) {
+  // explicit conversions make intent clear
+}
+
+// GOOD: std::optional or std::variant for overflows
+std::optional<int> safeAdd(int a, int b) {
+  if (a > 0 && b > INT_MAX - a) {
+    return std::nullopt;  // overflow detected
+  }
+  return a + b;
+}
+```
+
+**When it occurs:** Comparing int with size_t, arithmetic near INT_MAX/INT_MIN, implicit conversions in mixed expressions.
+
+### Floating-point precision
+
+**Floating-point is not exact. Comparisons, accumulation, and precision loss cause subtle bugs.**
+
+```cpp
+// BAD: comparing floats with ==
+double x = 0.1 + 0.2;
+if (x == 0.3) {  // almost certainly false (0.30000000000000004)
+  // rarely executed
+}
+
+// BAD: accumulating floating-point errors
+double sum = 0.0;
+for (int i = 0; i < 1000000; ++i) {
+  sum += 0.0001;  // accumulates rounding errors
+}
+// sum is not 100.0
+
+// BAD: assuming exact representation
+float f = 1.0f / 3.0f;
+float g = f * 3.0f;
+if (g == 1.0f) {  // false—loss of precision
+
+}
+
+// GOOD: use epsilon comparison
+const double EPSILON = 1e-9;
+if (std::abs(x - 0.3) < EPSILON) {
+  // accounts for floating-point precision
+}
+
+// GOOD: use Kahan summation for accurate accumulation
+double kahanSum(const std::vector<double>& values) {
+  double sum = 0.0;
+  double c = 0.0;  // compensation for lost low-order bits
+  for (double v : values) {
+    double y = v - c;
+    double t = sum + y;
+    c = (t - sum) - y;
+    sum = t;
+  }
+  return sum;
+}
+
+// GOOD: use long double for intermediate calculations
+long double sum = 0.0L;
+for (double v : values) {
+  sum += v;  // higher precision intermediate
+}
+double result = static_cast<double>(sum);
+
+// GOOD: store monetary values as integers (cents, not dollars)
+struct Money {
+  long long cents;  // 100 cents = 1 dollar
+};
+```
+
+**When it occurs:** Float comparisons, accumulation loops, division/multiplication cascades, financial calculations.
+
+### Lifetime and dangling references
+
+**Returning references to locals, temporaries, or freed memory creates dangling references.**
+
+```cpp
+// BAD: returning reference to local
+const int& getLocalRef() {
+  int local = 42;
+  return local;  // reference to destroyed variable
+}
+
+int x = getLocalRef();  // undefined behavior—reads freed stack
+
+// BAD: reference to temporary
+const std::string& getName() {
+  return std::string("John");  // temporary destroyed at return
+}
+
+const std::string& name = getName();
+std::cout << name;  // undefined behavior—reads destroyed temporary
+
+// BAD: storing reference in container
+std::vector<std::reference_wrapper<int>> refs;
+int x = 42;
+refs.push_back(std::ref(x));
+{
+  int y = 100;
+  refs.push_back(std::ref(y));
+}  // y destroyed
+// refs[1] now dangles
+
+// BAD: returning pointer from stack
+int* getLocalPtr() {
+  int local = 42;
+  return &local;  // pointer to destroyed variable
+}
+
+// GOOD: return by value
+int getValue() {
+  int local = 42;
+  return local;  // safe—copy returned
+}
+
+// GOOD: return std::string, not reference
+std::string getName() {
+  return std::string("John");  // copy returned
+}
+
+// GOOD: return smart pointer
+std::unique_ptr<int> allocate() {
+  return std::make_unique<int>(42);  // ownership transferred
+}
+
+// GOOD: use std::reference_wrapper with careful lifetime management
+class Config {
+  std::vector<std::reference_wrapper<const int>> values;
+public:
+  void addValue(const int& v) {
+    values.push_back(std::ref(v));  // caller responsible for lifetime
+  }
+};
+
+// GOOD: store values, not references
+std::vector<int> refs;
+int x = 42;
+refs.push_back(x);  // copy stored
+{
+  int y = 100;
+  refs.push_back(y);  // copy stored
+}  // safe—refs contains copies
+```
+
+**When it occurs:** Returning references to locals, storing references to temporaries, escaping stack addresses.
+
+### Concurrency hazards
+
+**Data races and improper synchronization cause undefined behavior in multi-threaded code.**
+
+```cpp
+// BAD: unsynchronized access to shared data
+int counter = 0;
+std::thread t1([](){ counter++; });  // data race
+std::thread t2([](){ counter++; });
+
+// BAD: missing volatile for signal handlers
+bool shouldExit = false;
+// signal handler sets shouldExit = true
+while (!shouldExit) {
+  // compiler may optimize away the loop
+}
+
+// BAD: non-atomic flag in condition check
+bool ready = false;
+std::thread worker([](){ ready = true; });
+while (!ready) {}  // data race, may spin forever
+
+// BAD: unlock order violations with locks
+std::mutex m1, m2;
+void function1() {
+  std::lock_guard<std::mutex> l1(m1);
+  std::lock_guard<std::mutex> l2(m2);
+  // do work
+}
+void function2() {
+  std::lock_guard<std::mutex> l2(m2);
+  std::lock_guard<std::mutex> l1(m1);  // opposite order—deadlock risk
+}
+
+// GOOD: use std::atomic for simple flags
+std::atomic<bool> shouldExit(false);
+std::atomic<int> counter(0);
+std::thread t1([](){ counter++; });
+std::thread t2([](){ counter++; });
+// atomic operations are race-free
+
+// GOOD: use mutex for compound operations
+std::mutex mtx;
+int counter = 0;
+void incrementCounter() {
+  std::lock_guard<std::mutex> lock(mtx);
+  counter++;
+}
+
+// GOOD: use std::atomic with memory ordering
+std::atomic<int> data(0);
+std::atomic<bool> ready(false);
+void writer() {
+  data.store(42, std::memory_order_relaxed);
+  ready.store(true, std::memory_order_release);
+}
+void reader() {
+  while (!ready.load(std::memory_order_acquire)) {}
+  int val = data.load(std::memory_order_relaxed);
+}
+
+// GOOD: consistent lock ordering
+class BankAccount {
+  mutable std::mutex m1, m2;
+  int balance1 = 0, balance2 = 0;
+public:
+  void transfer() {
+    // always lock in same order to prevent deadlock
+    std::lock(m1, m2);
+    std::lock_guard<std::mutex> l1(m1, std::adopt_lock);
+    std::lock_guard<std::mutex> l2(m2, std::adopt_lock);
+  }
+};
+```
+
+**When it occurs:** Multiple threads accessing shared data, signal handlers modifying state, improper atomic usage, inconsistent lock ordering.
+
+### Buffer overflows
+
+**Array bounds violations are classic undefined behavior leading to memory corruption and crashes.**
+
+```cpp
+// BAD: fixed-size array with unchecked access
+char buffer[10];
+strcpy(buffer, userInput);  // if userInput > 10 chars, overflow
+
+// BAD: off-by-one in loop
+int arr[10];
+for (int i = 0; i <= 10; ++i) {  // should be i < 10
+  arr[i] = 0;  // writes beyond array
+}
+
+// BAD: assuming null termination without checking
+void process(const char* str) {
+  while (*str) {  // may read off end of buffer
+    ++str;
+  }
+}
+
+// BAD: no bounds check on index
+std::vector<int> v = {1, 2, 3};
+int idx = getUserIndex();  // user provides index
+int x = v[idx];  // undefined if idx >= v.size()
+
+// GOOD: use std::vector instead of arrays
+std::vector<char> buffer;
+buffer.resize(100);
+// automatically manages bounds
+
+// GOOD: use range-based for loops
+int arr[10];
+for (int x : arr) {
+  // no indexing, no off-by-one
+}
+
+// GOOD: use std::string for string operations
+std::string buffer;
+buffer = userInput;  // automatically handles sizing
+
+// GOOD: check bounds before access
+int idx = getUserIndex();
+if (idx >= 0 && idx < static_cast<int>(v.size())) {
+  int x = v[idx];
+}
+
+// GOOD: use at() with exception handling
+try {
+  int x = v.at(idx);
+} catch (const std::out_of_range&) {
+  // handle invalid index
+}
+
+// GOOD: use std::span (C++20) for explicit bounds
+void process(std::span<int> arr) {
+  for (int i = 0; i < arr.size(); ++i) {
+    arr[i] = 0;  // bounds known to span
+  }
+}
+```
+
+**When it occurs:** Fixed-size arrays, string operations, manual indexing, off-by-one loops.
