@@ -1460,3 +1460,778 @@ template double multiply<double>(double, double);
 | **Algorithm logic same for multiple types** | Use template | Type-safe generic code |
 | **Performance-critical computation** | Use constexpr if possible | Compile-time evaluation |
 | **Function only in .cpp** | Use anonymous namespace or static | Internal linkage, no export |
+
+## Classes and structures
+
+C++ uses classes for encapsulation and data hiding, while structs (in C++) are typically used for data aggregates. C uses structs for grouping data with no associated member functions. Design decisions center on responsibility, ownership, and whether behavior matters.
+
+### Struct vs class decision framework
+
+**C structs - data only:**
+
+```c
+// C: struct for grouping related data
+struct Point {
+    int x;
+    int y;
+};
+
+// Usage: direct member access
+struct Point p = {5, 10};
+p.x = 20;
+
+// Function pointers for behavior
+typedef void (*draw_func)(struct Point);
+void draw_point(struct Point p);
+
+// Opaque struct for encapsulation (C pattern)
+typedef struct Queue Queue;  // Forward declaration
+Queue* queue_create();
+void queue_push(Queue* q, int value);
+int queue_pop(Queue* q);
+void queue_destroy(Queue* q);
+```
+
+**C++ struct vs class distinction:**
+
+| Aspect | struct | class |
+|--------|--------|-------|
+| **Default access** | public | private |
+| **Default inheritance** | public | private |
+| **Use case** | Data aggregate, POD | Encapsulation, complex behavior |
+| **Memory layout** | Contiguous, predictable | Same, but may hide details |
+| **Member functions** | Yes (same as class) | Yes (recommended) |
+
+**Decision criteria:**
+
+```cpp
+// Use struct for:
+// 1. Plain Old Data (POD) - no custom constructors/destructors
+struct Color {
+    uint8_t r, g, b, a;
+};
+
+// 2. Data aggregate with few helper functions
+struct Configuration {
+    std::string app_name;
+    int port;
+    bool debug_mode;
+
+    // Simple helpers OK
+    int get_port() const { return port; }
+};
+
+// Use class for:
+// 1. Encapsulation with private state
+class Logger {
+private:
+    std::vector<std::string> messages_;
+    int verbosity_;
+
+public:
+    Logger(int v) : verbosity_(v) { }
+    void log(const std::string& msg);
+    int get_message_count() const;
+};
+
+// 2. Complex behavior requiring invariants
+class BankAccount {
+private:
+    double balance_;
+    std::string account_number_;
+
+    void validate_balance() {
+        if (balance_ < 0) throw std::logic_error("negative balance");
+    }
+
+public:
+    BankAccount(const std::string& num, double initial)
+        : account_number_(num), balance_(initial) {
+        validate_balance();
+    }
+
+    void deposit(double amount);
+    bool withdraw(double amount);
+    double get_balance() const;
+};
+
+// 3. Polymorphic types (virtual functions)
+class Shape {
+public:
+    virtual ~Shape() = default;
+    virtual double area() const = 0;
+};
+
+class Circle : public Shape {
+private:
+    double radius_;
+public:
+    Circle(double r) : radius_(r) { }
+    double area() const override { return 3.14159 * radius_ * radius_; }
+};
+```
+
+**GOOD: Struct for POD data**
+```cpp
+struct DataPoint {
+    int timestamp;
+    double value;
+    int sensor_id;
+};
+
+// Aggregate initialization
+DataPoint dp{1000, 42.5, 3};
+auto [ts, val, id] = dp;  // Structured binding
+```
+
+**BAD: Struct when you need encapsulation**
+```cpp
+// Don't do this - should be class
+struct BankAccount {
+    double balance;  // Exposed - anyone can set negative!
+    void withdraw(double amount) {
+        balance -= amount;  // No validation
+    }
+};
+```
+
+### Class design principles
+
+**Single Responsibility Principle:** Each class has one reason to change.
+
+```cpp
+// BAD: Multiple responsibilities
+class User {
+    std::string name_;
+    std::string email_;
+
+public:
+    void save_to_database() { }  // Database responsibility
+    void send_email() { }        // Email responsibility
+    void validate_input() { }    // Validation responsibility
+};
+
+// GOOD: Single responsibility
+class User {
+private:
+    std::string name_;
+    std::string email_;
+
+public:
+    const std::string& get_name() const { return name_; }
+    const std::string& get_email() const { return email_; }
+    bool is_valid() const;
+};
+
+class UserRepository {
+public:
+    void save(const User& user);
+    User load(int id);
+};
+
+class UserNotifier {
+public:
+    void send_welcome_email(const User& user);
+};
+```
+
+**Encapsulation:** Hide implementation details, expose only necessary interface.
+
+```cpp
+// GOOD: Data hiding with public interface
+class Counter {
+private:
+    int value_ = 0;
+    int max_value_;
+
+    void validate_increment() {
+        if (value_ >= max_value_) {
+            throw std::overflow_error("counter overflow");
+        }
+    }
+
+public:
+    Counter(int max) : max_value_(max) { }
+
+    void increment() {
+        validate_increment();
+        value_++;
+    }
+
+    int get() const { return value_; }
+    void reset() { value_ = 0; }
+};
+
+// BAD: Public data breaks encapsulation
+class BadCounter {
+public:
+    int value;  // Anyone can break invariants
+    int max_value;
+
+    void increment() {
+        value++;  // No validation
+    }
+};
+```
+
+**Const correctness:** Member functions that don't modify state should be const.
+
+```cpp
+// GOOD: Clear intent with const
+class Cache {
+private:
+    std::map<int, std::string> data_;
+    mutable int hits_ = 0;
+
+public:
+    // const function - doesn't modify public state
+    std::optional<std::string> get(int key) const {
+        if (data_.count(key)) {
+            hits_++;  // OK: mutable member
+            return data_.at(key);
+        }
+        return std::nullopt;
+    }
+
+    // Non-const - modifies state
+    void set(int key, const std::string& value) {
+        data_[key] = value;
+    }
+
+    int get_hit_count() const { return hits_; }
+};
+
+// Usage
+void display_user(const Cache& cache) {
+    auto user = cache.get(42);  // OK: calls const get()
+    // cache.set(42, "new");     // ERROR: set() not const
+}
+```
+
+### Inheritance patterns
+
+Inheritance enables polymorphism but creates tight coupling. Use carefully and prefer composition for code reuse.
+
+**When inheritance is appropriate:**
+
+```cpp
+// GOOD: Polymorphic base class (is-a relationship)
+class Shape {
+public:
+    virtual ~Shape() = default;  // REQUIRED: virtual destructor
+    virtual double area() const = 0;
+    virtual double perimeter() const = 0;
+};
+
+class Rectangle : public Shape {
+private:
+    double width_, height_;
+
+public:
+    Rectangle(double w, double h) : width_(w), height_(h) { }
+
+    double area() const override {
+        return width_ * height_;
+    }
+
+    double perimeter() const override {
+        return 2 * (width_ + height_);
+    }
+};
+
+class Circle : public Shape {
+private:
+    double radius_;
+
+public:
+    explicit Circle(double r) : radius_(r) { }
+
+    double area() const override {
+        return 3.14159 * radius_ * radius_;
+    }
+
+    double perimeter() const override {
+        return 2 * 3.14159 * radius_;
+    }
+};
+
+// Usage: polymorphism
+void print_area(const Shape& shape) {
+    std::cout << "Area: " << shape.area() << std::endl;
+}
+
+std::vector<std::unique_ptr<Shape>> shapes;
+shapes.push_back(std::make_unique<Rectangle>(5, 3));
+shapes.push_back(std::make_unique<Circle>(2));
+
+for (const auto& shape : shapes) {
+    print_area(*shape);  // Calls correct area() for each type
+}
+```
+
+**Virtual destructors are REQUIRED:**
+
+```cpp
+// BAD: No virtual destructor - memory leak
+class Base {
+public:
+    ~Base() { }  // Not virtual
+};
+
+class Derived : public Base {
+private:
+    int* data_;
+public:
+    Derived() { data_ = new int[100]; }
+    ~Derived() { delete[] data_; }  // Never called!
+};
+
+std::unique_ptr<Base> ptr = std::make_unique<Derived>();
+// When ptr destroyed, calls Base::~Base(), not Derived::~Derived()
+// Derived destructor never runs - MEMORY LEAK
+
+// GOOD: Virtual destructor
+class Base {
+public:
+    virtual ~Base() = default;  // Virtual - calls derived destructor
+};
+
+class Derived : public Base {
+private:
+    int* data_;
+public:
+    Derived() { data_ = new int[100]; }
+    ~Derived() override { delete[] data_; }  // Called correctly
+};
+
+std::unique_ptr<Base> ptr = std::make_unique<Derived>();
+// When ptr destroyed, calls Derived::~Derived() then Base::~Base()
+// Proper cleanup
+```
+
+**Override keyword (C++11) prevents bugs:**
+
+```cpp
+// GOOD: override catches mistakes
+class Base {
+public:
+    virtual ~Base() = default;
+    virtual void process(int value);
+};
+
+class Derived : public Base {
+public:
+    void process(int value) override {  // override keyword - safer
+        // Implementation
+    }
+};
+
+// BAD: Typo in function signature
+class BadDerived : public Base {
+public:
+    void process(double value) {  // ERROR: different signature!
+        // This is a new function, not an override
+    }
+};
+
+// With override keyword:
+class BadDerived : public Base {
+public:
+    void process(double value) override {  // COMPILER ERROR: doesn't match base
+    }
+};
+```
+
+**Abstract base classes (pure virtual functions):**
+
+```cpp
+// GOOD: Abstract interface
+class DataStore {
+public:
+    virtual ~DataStore() = default;
+
+    virtual void save(int id, const std::string& data) = 0;
+    virtual std::optional<std::string> load(int id) const = 0;
+    virtual void delete_entry(int id) = 0;
+};
+
+// Concrete implementations
+class FileStore : public DataStore {
+public:
+    void save(int id, const std::string& data) override;
+    std::optional<std::string> load(int id) const override;
+    void delete_entry(int id) override;
+};
+
+class DatabaseStore : public DataStore {
+public:
+    void save(int id, const std::string& data) override;
+    std::optional<std::string> load(int id) const override;
+    void delete_entry(int id) override;
+};
+
+// Usage: switch implementations without changing code
+void backup_data(DataStore& store) {
+    store.save(1, "important data");
+}
+
+FileStore fs;
+backup_data(fs);
+
+DatabaseStore db;
+backup_data(db);
+```
+
+### Special member functions: Rule of Five
+
+**The Rule of Five:** If you define any of these, define all five:
+1. Destructor
+2. Copy constructor
+3. Copy assignment operator
+4. Move constructor
+5. Move assignment operator
+
+This applies to classes that manage resources.
+
+```cpp
+// GOOD: Complete Rule of Five
+class DynamicArray {
+private:
+    int* data_;
+    int size_;
+
+public:
+    // Constructor
+    explicit DynamicArray(int size) : size_(size) {
+        data_ = new int[size];
+        std::fill(data_, data_ + size, 0);
+    }
+
+    // Destructor - releases memory
+    ~DynamicArray() {
+        delete[] data_;
+    }
+
+    // Copy constructor - deep copy
+    DynamicArray(const DynamicArray& other)
+        : size_(other.size_) {
+        data_ = new int[size_];
+        std::copy(other.data_, other.data_ + size_, data_);
+    }
+
+    // Copy assignment - self-assignment safe
+    DynamicArray& operator=(const DynamicArray& other) {
+        if (this == &other) return *this;  // Self-assignment guard
+
+        delete[] data_;
+        size_ = other.size_;
+        data_ = new int[size_];
+        std::copy(other.data_, other.data_ + size_, data_);
+        return *this;
+    }
+
+    // Move constructor - transfer ownership
+    DynamicArray(DynamicArray&& other) noexcept
+        : data_(other.data_), size_(other.size_) {
+        other.data_ = nullptr;
+        other.size_ = 0;
+    }
+
+    // Move assignment - transfer and clean up
+    DynamicArray& operator=(DynamicArray&& other) noexcept {
+        if (this == &other) return *this;
+
+        delete[] data_;
+        data_ = other.data_;
+        size_ = other.size_;
+        other.data_ = nullptr;
+        other.size_ = 0;
+        return *this;
+    }
+
+    int get_size() const { return size_; }
+    int& operator[](int index) { return data_[index]; }
+    const int& operator[](int index) const { return data_[index]; }
+};
+
+// Usage patterns
+DynamicArray arr1(10);
+DynamicArray arr2 = arr1;           // Copy constructor
+DynamicArray arr3 = std::move(arr1); // Move constructor (arr1 now empty)
+arr2 = arr3;                        // Copy assignment
+arr2 = std::move(arr3);             // Move assignment
+```
+
+**When you DON'T need custom Rule of Five:**
+
+```cpp
+// GOOD: Let compiler generate - simpler and correct
+class SimplePoint {
+    std::unique_ptr<int> x_;  // Manages its own lifetime
+    std::unique_ptr<int> y_;
+    std::string label_;       // Manages its own lifetime
+
+public:
+    SimplePoint() = default;
+    // Compiler generates:
+    // - Destructor calls unique_ptr and string destructors
+    // - Move constructor/assignment (efficient)
+    // - Copy constructor/assignment (deleted if any unique_ptr)
+};
+
+// GOOD: Explicitly default when appropriate
+class DataPoint {
+private:
+    double value_;
+    int timestamp_;
+
+public:
+    ~DataPoint() = default;
+    DataPoint(const DataPoint&) = default;
+    DataPoint& operator=(const DataPoint&) = default;
+    DataPoint(DataPoint&&) = default;
+    DataPoint& operator=(DataPoint&&) = default;
+};
+```
+
+**Delete copy when move semantics required:**
+
+```cpp
+// GOOD: Move-only type (non-copyable)
+class FileHandle {
+    int fd_;
+
+public:
+    explicit FileHandle(const std::string& path);
+    ~FileHandle();
+
+    // Delete copy operations
+    FileHandle(const FileHandle&) = delete;
+    FileHandle& operator=(const FileHandle&) = delete;
+
+    // Allow move operations
+    FileHandle(FileHandle&& other) noexcept
+        : fd_(other.fd_) {
+        other.fd_ = -1;
+    }
+
+    FileHandle& operator=(FileHandle&& other) noexcept {
+        if (this != &other) {
+            close();
+            fd_ = other.fd_;
+            other.fd_ = -1;
+        }
+        return *this;
+    }
+
+private:
+    void close();
+};
+
+// Usage enforces move semantics
+FileHandle f1("data.txt");
+// FileHandle f2 = f1;  // ERROR: copy deleted
+FileHandle f2 = std::move(f1);  // OK: move
+```
+
+### Modern alternatives to inheritance
+
+**Composition over inheritance (preferred):**
+
+```cpp
+// BAD: Deep inheritance hierarchy
+class Vehicle {
+protected:
+    double speed_;
+public:
+    virtual ~Vehicle() = default;
+    virtual void start() = 0;
+};
+
+class Car : public Vehicle {
+    // All cars inherit speed_
+};
+
+class SportsCar : public Car {
+    // Adds performance features
+};
+
+// Problem: Tight coupling, fragile base class problem
+
+// GOOD: Composition - flexible and testable
+class Engine {
+public:
+    void start();
+    double get_max_speed() const;
+};
+
+class Transmission {
+public:
+    void engage_gear(int gear);
+    double get_efficiency() const;
+};
+
+class Car {
+private:
+    Engine engine_;
+    Transmission transmission_;
+    double current_speed_ = 0;
+
+public:
+    void start() {
+        engine_.start();
+    }
+
+    void accelerate() {
+        current_speed_ += engine_.get_max_speed() * transmission_.get_efficiency();
+    }
+
+    double get_speed() const { return current_speed_; }
+};
+
+class SportsCar {
+private:
+    Engine performance_engine_;  // Higher performance engine
+    Transmission racing_transmission_;
+    double current_speed_ = 0;
+
+public:
+    void start() {
+        performance_engine_.start();
+    }
+
+    void accelerate() {
+        current_speed_ += performance_engine_.get_max_speed() * 1.2;
+    }
+};
+```
+
+**std::variant for type unions (C++17):**
+
+```cpp
+// GOOD: Type-safe union using variant
+enum class ErrorType {
+    FileNotFound,
+    PermissionDenied,
+    NetworkTimeout,
+    ParseError
+};
+
+struct FileNotFoundError {
+    std::string path;
+};
+
+struct PermissionError {
+    std::string path;
+};
+
+struct NetworkError {
+    int timeout_ms;
+};
+
+struct ParseError {
+    int line;
+    int column;
+};
+
+using Result = std::variant<
+    std::string,          // Success value
+    FileNotFoundError,
+    PermissionError,
+    NetworkError,
+    ParseError
+>;
+
+Result load_config(const std::string& path) {
+    if (!file_exists(path)) {
+        return FileNotFoundError{path};
+    }
+
+    if (!has_permission(path)) {
+        return PermissionError{path};
+    }
+
+    if (!connect_network()) {
+        return NetworkError{5000};
+    }
+
+    if (auto parsed = parse_file(path)) {
+        return *parsed;
+    }
+
+    return ParseError{10, 5};
+}
+
+// Usage with std::visit
+void handle_result(const Result& result) {
+    std::visit([](const auto& value) {
+        if constexpr (std::is_same_v<std::decay_t<decltype(value)>, std::string>) {
+            std::cout << "Config: " << value << std::endl;
+        } else if constexpr (std::is_same_v<std::decay_t<decltype(value)>, FileNotFoundError>) {
+            std::cerr << "File not found: " << value.path << std::endl;
+        } else if constexpr (std::is_same_v<std::decay_t<decltype(value)>, NetworkError>) {
+            std::cerr << "Network timeout: " << value.timeout_ms << "ms" << std::endl;
+        }
+        // ... handle other types
+    }, result);
+}
+```
+
+**std::variant as type-safe enum alternative:**
+
+```cpp
+// BAD: Inheritance for simple type tagging
+class Message {
+public:
+    virtual ~Message() = default;
+    virtual void process() = 0;
+};
+
+class UserMessage : public Message {
+    std::string username_;
+public:
+    void process() override { }
+};
+
+class SystemMessage : public Message {
+    int code_;
+public:
+    void process() override { }
+};
+
+// GOOD: std::variant for type union
+struct UserMessage {
+    std::string username;
+    std::string text;
+};
+
+struct SystemMessage {
+    int code;
+    std::string description;
+};
+
+using Message = std::variant<UserMessage, SystemMessage>;
+
+void process_message(const Message& msg) {
+    std::visit([](const auto& m) {
+        if constexpr (std::is_same_v<std::decay_t<decltype(m)>, UserMessage>) {
+            std::cout << m.username << ": " << m.text << std::endl;
+        } else if constexpr (std::is_same_v<std::decay_t<decltype(m)>, SystemMessage>) {
+            std::cerr << "System [" << m.code << "]: " << m.description << std::endl;
+        }
+    }, msg);
+}
+```
+
+### Classes and structures decision framework
+
+| Scenario | Use | Rationale |
+|----------|-----|-----------|
+| **Simple data container** | struct with public members | Clear intent, minimal overhead |
+| **Encapsulation with invariants** | class with private members | Hide implementation, enforce constraints |
+| **Shared interface for multiple types** | Abstract base class | Polymorphism via virtual functions |
+| **Type union without inheritance** | std::variant | Type-safe, no virtual cost |
+| **Code reuse** | Composition | More flexible than inheritance |
+| **Resource management** | Implement Rule of Five | Correct copy/move semantics |
+| **Non-copyable resource** | =delete copy, allow move | Enforce unique ownership |
+| **Simple group of related functions** | Free functions in namespace | No OO overhead if not needed |
