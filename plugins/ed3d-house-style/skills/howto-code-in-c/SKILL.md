@@ -4470,23 +4470,23 @@ Runtime hazards and undefined behavior that the compiler won't catch. Know these
 
 ### Undefined behavior
 
-**Undefined behavior (UB) means the program can do anything—including appearing to work correctly until it doesn't.**
+**Undefined behavior (UB) means the program can do anything-including appearing to work correctly until it doesn't.**
 
 The C++ standard imposes no requirements on what happens when undefined behavior occurs. The compiler may optimize assuming it never happens, leading to shocking results.
 
 ```cpp
 // BAD: signed integer overflow is undefined behavior
 int x = INT_MAX;
-x++;  // undefined behavior—may wrap, may not, may crash
+x++;  // undefined behavior-may wrap, may not, may crash
 
 // BAD: accessing out-of-bounds memory
 std::vector<int> v = {1, 2, 3};
-int value = v[10];  // undefined behavior—may return garbage, may crash
+int value = v[10];  // undefined behavior-may return garbage, may crash
 
 // BAD: returning reference to local variable
 int& dangling() {
   int local = 5;
-  return local;  // undefined behavior—reference to destroyed object
+  return local;  // undefined behavior-reference to destroyed object
 }
 
 // GOOD: check bounds before access
@@ -4504,7 +4504,7 @@ try {
 // GOOD: return value, not reference to local
 int getValue() {
   int local = 5;
-  return local;  // safe—returns copy
+  return local;  // safe-returns copy
 }
 ```
 
@@ -4575,7 +4575,7 @@ void process(std::span<int> arr) {
 std::vector<int> v = {1, 2, 3};
 auto it = v.begin();
 v.push_back(4);  // may reallocate, invalidating 'it'
-*it = 10;  // undefined behavior—'it' may point to freed memory
+*it = 10;  // undefined behavior-'it' may point to freed memory
 
 // BAD: erasing during iteration
 std::vector<int> v = {1, 2, 3, 4};
@@ -4768,7 +4768,7 @@ float f = pun.floatVal;  // technically works but fragile
 // BAD: casting between unrelated pointers
 int x = 42;
 float* fp = reinterpret_cast<float*>(&x);
-*fp = 3.14f;  // undefined behavior—violates strict aliasing
+*fp = 3.14f;  // undefined behavior-violates strict aliasing
 
 // BAD: assuming pointer size relationships
 void* ptr = malloc(8);
@@ -4803,7 +4803,7 @@ bytes[0] = 100;  // safe byte-level access
 std::vector<int> v = {1, 2, 3};
 int count = 3;
 if (count < v.size()) {  // size() returns size_t (unsigned)
-  // count is implicitly converted to unsigned—may behave unexpectedly
+  // count is implicitly converted to unsigned-may behave unexpectedly
 }
 
 // BAD: signed integer overflow (undefined behavior)
@@ -4869,7 +4869,7 @@ for (int i = 0; i < 1000000; ++i) {
 // BAD: assuming exact representation
 float f = 1.0f / 3.0f;
 float g = f * 3.0f;
-if (g == 1.0f) {  // false—loss of precision
+if (g == 1.0f) {  // false-loss of precision
 
 }
 
@@ -4918,7 +4918,7 @@ const int& getLocalRef() {
   return local;  // reference to destroyed variable
 }
 
-int x = getLocalRef();  // undefined behavior—reads freed stack
+int x = getLocalRef();  // undefined behavior-reads freed stack
 
 // BAD: reference to temporary
 const std::string& getName() {
@@ -4926,7 +4926,7 @@ const std::string& getName() {
 }
 
 const std::string& name = getName();
-std::cout << name;  // undefined behavior—reads destroyed temporary
+std::cout << name;  // undefined behavior-reads destroyed temporary
 
 // BAD: storing reference in container
 std::vector<std::reference_wrapper<int>> refs;
@@ -4947,7 +4947,7 @@ int* getLocalPtr() {
 // GOOD: return by value
 int getValue() {
   int local = 42;
-  return local;  // safe—copy returned
+  return local;  // safe-copy returned
 }
 
 // GOOD: return std::string, not reference
@@ -4976,7 +4976,7 @@ refs.push_back(x);  // copy stored
 {
   int y = 100;
   refs.push_back(y);  // copy stored
-}  // safe—refs contains copies
+}  // safe-refs contains copies
 ```
 
 **When it occurs:** Returning references to locals, storing references to temporaries, escaping stack addresses.
@@ -5012,7 +5012,7 @@ void function1() {
 }
 void function2() {
   std::lock_guard<std::mutex> l2(m2);
-  std::lock_guard<std::mutex> l1(m1);  // opposite order—deadlock risk
+  std::lock_guard<std::mutex> l1(m1);  // opposite order-deadlock risk
 }
 
 // GOOD: use std::atomic for simple flags
