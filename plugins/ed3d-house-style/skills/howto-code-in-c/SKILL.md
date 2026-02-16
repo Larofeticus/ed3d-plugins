@@ -2667,3 +2667,582 @@ void initialize_from_c_lib(const std::vector<int>& data) {
 | **Must remove const for C interop** | `const_cast<...>()` | Last resort, document why |
 
 **Key principle:** const is a compile-time safety net. When const seems restrictive, it's usually revealing a design problem that should be fixed (using mutable, returning optional, or restructuring).
+
+## Ownership and lifetimes
+
+**Ownership** defines who is responsible for releasing a resource. Clear ownership patterns prevent memory leaks, dangling references, and use-after-free bugs. Modern C++ (C++11+) provides move semantics to make ownership transfer explicit and efficient.
+
+### Ownership semantics
+
+**Core principle:** Every resource has one owner responsible for cleanup.
+
+```cpp
+// GOOD: Explicit ownership with unique_ptr
+class Document {
+private:
+    std::unique_ptr<FileBuffer> buffer_;  // This object owns the buffer
+
+public:
+    Document() : buffer_(std::make_unique<FileBuffer>()) { }
+    ~Document() {
+        // Destructor automatically deletes buffer_ via unique_ptr
+    }
+};
+
+// Clear: The Document owns the FileBuffer lifecycle
+Document doc;
+// buffer_ created and managed automatically
+// buffer_ deleted when doc destroyed
+
+// BAD: Ambiguous ownership (raw pointer)
+class DataProcessor {
+private:
+    Data* data_;  // Who owns this? Unclear!
+
+public:
+    DataProcessor(Data* d) : data_(d) { }
+    ~DataProcessor() {
+        delete data_;  // Assumes we own it - caller might have same assumption!
+    }
+};
+
+// Caller code:
+Data* my_data = new Data();
+DataProcessor proc(my_data);
+// Is my_data automatically deleted? Caller might think they own it
+```
+
+**Ownership models:**
+
+```cpp
+// 1. SOLE OWNERSHIP - One owner
+std::unique_ptr<Widget> widget = std::make_unique<Widget>();
+// Only this code path owns widget. No copies possible.
+
+// 2. SHARED OWNERSHIP - Multiple owners via reference counting
+std::shared_ptr<Resource> res1 = std::make_shared<Resource>();
+std::shared_ptr<Resource> res2 = res1;  // Both own it
+// Deleted when last shared_ptr is destroyed
+
+// 3. BORROWED REFERENCE - No ownership
+void process(const Widget& widget) {
+    // Don't own widget. Caller is responsible for lifetime.
+}
+
+// 4. OPTIONAL BORROWED REFERENCE - May or may not exist
+void find_widget(const std::string& id, const Widget** out) {
+    // out receives pointer if found, nullptr if not
+    // Caller doesn't own the Widget
+}
+
+// 5. C PATTERN - Explicit ownership via function pairs
+Widget* create_widget() {
+    return new Widget();  // Caller must call destroy_widget()
+}
+
+void destroy_widget(Widget* w) {
+    delete w;
+}
+```
+
+### Move semantics (C++11+)
+
+**Move semantics** enable efficient transfer of ownership and resources without expensive copies. Rvalue references (`&&`) identify temporary objects that can be "moved from".
+
+**Lvalue vs Rvalue:**
+
+```cpp
+// Lvalue: Something with an identity (has an address)
+int x = 5;              // x is lvalue
+int& ref = x;           // ref binds to lvalue
+
+// Rvalue: Temporary with no address after use
+int get_number() {
+    return 5;           // Temporary, doesn't need copy
+}
+
+int y = get_number();   // get_number() is rvalue
+
+// Rvalue reference (&& ) binds to rvalues
+int&& rref = get_number();  // Can bind to temporary
+// int&& bad = x;  // ERROR: x is lvalue, not rvalue
+```
+
+**Move constructors - transfer ownership:**
+
+```cpp
+// GOOD: Move constructor transfers ownership without copying
+class String {
+private:
+    char* data_;
+    int size_;
+
+public:
+    // Copy constructor - expensive deep copy
+    String(const String& other) : size_(other.size_) {
+        data_ = new char[size_ + 1];
+        std::strcpy(data_, other.data_);
+    }
+
+    // Move constructor - cheap transfer
+    String(String&& other) noexcept
+        : data_(other.data_), size_(other.size_) {
+        // Leave other in valid but empty state
+        other.data_ = nullptr;
+        other.size_ = 0;
+    }
+
+    ~String() {
+        delete[] data_;
+    }
+};
+
+// Usage
+String s1 = "hello";                    // Constructs string
+String s2 = std::move(s1);              // Move constructor - efficient!
+// s1 is now valid but empty
+// s2 owns the data
+
+// Without move semantics, this would copy large buffer twice
+std::vector<String> strings;
+String large_string = "much data";
+strings.push_back(std::move(large_string));  // Move, don't copy
+```
+
+**std::move - cast to rvalue reference:**
+
+```cpp
+// std::move indicates "I'm done with this object, you can take its resources"
+
+// GOOD: Explicitly move expensive objects
+std::vector<int> create_large_vector() {
+    std::vector<int> result;
+    result.reserve(1000000);
+    // Fill result...
+    return result;  // Move constructor called (not copy)
+}
+
+// If vector was important to preserve:
+std::vector<int> processed;
+std::vector<int> original;
+processed = std::move(original);  // Transfer ownership
+// original is now empty
+
+// GOOD: Move in function parameters for sink parameters
+void store_vector(std::vector<int>&& vec) {
+    // Caller relinquishes ownership
+    data_.push_back(std::move(vec));  // Take ownership of vec
+}
+
+// Usage
+std::vector<int> temp;
+// Fill temp...
+store_vector(std::move(temp));  // temp is now empty
+
+// BAD: Moving lvalues unnecessarily (confuses intent)
+std::vector<int> important;
+process(std::move(important));  // Dangerous - important now empty
+important.push_back(42);        // Empty vector!
+```
+
+**Move assignment operator:**
+
+```cpp
+// GOOD: Complete move semantics
+class Buffer {
+private:
+    uint8_t* data_;
+    int capacity_;
+
+public:
+    // Copy assignment
+    Buffer& operator=(const Buffer& other) {
+        if (this != &other) {
+            delete[] data_;
+            capacity_ = other.capacity_;
+            data_ = new uint8_t[capacity_];
+            std::memcpy(data_, other.data_, capacity_);
+        }
+        return *this;
+    }
+
+    // Move assignment - transfer ownership
+    Buffer& operator=(Buffer&& other) noexcept {
+        if (this != &other) {
+            delete[] data_;
+            data_ = other.data_;
+            capacity_ = other.capacity_;
+            other.data_ = nullptr;
+            other.capacity_ = 0;
+        }
+        return *this;
+    }
+};
+
+// Usage
+Buffer src(1000);
+Buffer dst;
+dst = std::move(src);  // Move assignment - efficient
+// src is now empty, dst owns the data
+```
+
+**Return value optimization (RVO) vs move:**
+
+```cpp
+// Modern C++ compiler does RVO (Return Value Optimization)
+// which is often better than move
+
+std::vector<int> get_items() {
+    std::vector<int> items;
+    items.push_back(1);
+    return items;  // Compiler performs RVO - no move needed!
+    // Construction happens directly at call site
+}
+
+// If RVO not possible, move semantics handle it:
+std::unique_ptr<Widget> create_widget(int type) {
+    if (type == 1) {
+        return std::make_unique<TypeA>();  // Different types
+    } else {
+        return std::make_unique<TypeB>();  // Use move
+    }
+}
+```
+
+### Transfer of ownership patterns
+
+**Factory functions return ownership:**
+
+```cpp
+// GOOD: Caller owns returned object
+std::unique_ptr<Parser> create_parser(const std::string& format) {
+    if (format == "json") {
+        return std::make_unique<JsonParser>();
+    } else if (format == "xml") {
+        return std::make_unique<XmlParser>();
+    }
+    throw std::invalid_argument("Unknown format");
+}
+
+// Usage - ownership explicit
+auto parser = create_parser("json");  // parser owns the Parser object
+// parser automatically deleted when it goes out of scope
+
+// BAD: Raw pointer hides ownership
+Parser* create_parser_bad(const std::string& format) {
+    return new JsonParser();  // Caller must remember to delete!
+}
+```
+
+**Sink parameters take ownership:**
+
+```cpp
+// GOOD: Sink parameter (takes ownership)
+class MessageQueue {
+private:
+    std::vector<std::unique_ptr<Message>> messages_;
+
+public:
+    void enqueue(std::unique_ptr<Message> msg) {
+        // Queue takes ownership of msg
+        messages_.push_back(std::move(msg));
+    }
+};
+
+// Usage makes ownership transfer explicit
+auto msg = std::make_unique<Message>("hello");
+queue.enqueue(std::move(msg));
+// msg is now nullptr, queue owns the message
+
+// BAD: Ambiguous parameter (does callee own it?)
+void enqueue_bad(Message* msg) {
+    queue_.push_back(msg);  // Who owns msg now?
+}
+```
+
+**Release patterns (converting unique_ptr to raw pointer):**
+
+```cpp
+// GOOD: Explicit release when needed
+auto ptr = std::make_unique<Resource>();
+void* opaque = ptr.release();  // Release ownership
+// Now we're responsible for deleting opaque
+
+// Less commonly, get pointer without releasing ownership:
+Resource* borrowed = ptr.get();  // Borrow only, don't own
+// borrowed is valid only while ptr exists
+
+// GOOD: Reset to take ownership
+std::unique_ptr<Resource> old_res = std::make_unique<Resource>();
+old_res.reset();  // Deletes old resource
+old_res = std::make_unique<Resource>();  // Can reassign
+```
+
+**Shared ownership patterns:**
+
+```cpp
+// GOOD: Multiple owners via shared_ptr
+class DataCache {
+private:
+    std::map<int, std::shared_ptr<CachedData>> cache_;
+
+public:
+    std::shared_ptr<CachedData> get_or_create(int id) {
+        auto it = cache_.find(id);
+        if (it != cache_.end()) {
+            return it->second;  // Return shared ownership
+        }
+
+        auto data = std::make_shared<CachedData>(id);
+        cache_[id] = data;
+        return data;
+    }
+};
+
+// Usage
+{
+    auto data1 = cache.get_or_create(1);
+    {
+        auto data2 = data1;  // Shared ownership
+        // use_count() would be 3 (cache + data1 + data2)
+    }
+    // data2 destroyed, use_count() is 2
+}
+// data1 destroyed, cache still holds copy
+```
+
+### Dangling reference prevention
+
+**Dangling reference:** A reference to an object that has been deleted.
+
+```cpp
+// BAD: Dangling reference
+const int& get_value() {
+    int x = 42;
+    return x;  // ERROR: x destroyed at function return
+}
+
+int main() {
+    const int& value = get_value();
+    std::cout << value << std::endl;  // UNDEFINED BEHAVIOR
+}
+
+// GOOD: Return by value instead
+int get_value() {
+    return 42;  // Safe - returns value
+}
+
+// GOOD: Return reference to object that outlives function
+class Registry {
+private:
+    std::map<int, int> data_;
+
+public:
+    const int& lookup(int key) const {
+        static const int NOT_FOUND = -1;
+        auto it = data_.find(key);
+        return it != data_.end() ? it->second : NOT_FOUND;
+    }
+};
+
+// GOOD: Return optional instead of reference
+std::optional<int> find_user_id(const std::string& name) {
+    auto it = users_.find(name);
+    if (it != users_.end()) {
+        return it->second.id;
+    }
+    return std::nullopt;
+}
+```
+
+**Iterator invalidation (a form of dangling):**
+
+```cpp
+// BAD: Dangling iterator after vector grows
+std::vector<int> vec = {1, 2, 3};
+auto iter = vec.begin();
+vec.push_back(4);  // May reallocate - iter is now dangling!
+std::cout << *iter << std::endl;  // UNDEFINED BEHAVIOR
+
+// GOOD: Don't hold iterators across modifying operations
+std::vector<int> vec = {1, 2, 3};
+{
+    auto iter = vec.begin();
+    std::cout << *iter << std::endl;  // Use immediately
+}
+// Don't use iter after vec.push_back()
+
+// GOOD: Use indices for stable references
+std::vector<int> vec = {1, 2, 3};
+int first_index = 0;
+vec.push_back(4);  // Safe - index still valid
+std::cout << vec[first_index] << std::endl;  // OK
+
+// GOOD: Clear/rebuild vectors safely
+std::vector<int> items;
+for (int i = 0; i < 10; ++i) {
+    items.push_back(i);  // Reserve prevents reallocation
+}
+items.reserve(100);  // Pre-allocate space
+for (int i = 10; i < 100; ++i) {
+    items.push_back(i);  // No reallocation needed
+}
+```
+
+**Circular references with shared_ptr:**
+
+```cpp
+// BAD: Memory leak with circular references
+class Node {
+public:
+    std::shared_ptr<Node> next;
+    std::shared_ptr<Node> prev;  // Circular!
+};
+
+auto node1 = std::make_shared<Node>();
+auto node2 = std::make_shared<Node>();
+node1->next = node2;
+node2->prev = node1;  // Circular reference - memory leak!
+// Neither can be deleted because each holds a reference to the other
+
+// GOOD: Break cycle with weak_ptr
+class Node {
+public:
+    std::shared_ptr<Node> next;
+    std::weak_ptr<Node> prev;  // Non-owning reference
+};
+
+auto node1 = std::make_shared<Node>();
+auto node2 = std::make_shared<Node>();
+node1->next = node2;
+node2->prev = node1;  // Not circular - node1 can be deleted
+// When node1 deleted, prev becomes dangling (checked via lock())
+
+// Usage with weak_ptr
+if (auto parent = node->prev.lock()) {
+    // parent is valid, use it
+} else {
+    // parent was deleted
+}
+```
+
+### Lifetime management best practices
+
+**Object lifetime chart:**
+
+```
+Stack objects: Created at declaration, destroyed at scope exit
+    int x = 5;
+    { x lives here }
+    // x destroyed here
+
+Dynamic objects: Created by new/make_unique/make_shared, destroyed by delete/unique_ptr/shared_ptr
+    auto ptr = std::make_unique<Widget>();
+    // ptr->lifetime managed automatically
+
+Function parameters: Live only during function call
+    void process(const Widget& w) {
+        // w lives here
+    }
+    // w out of scope
+
+Member variables: Live as long as containing object
+    class Container {
+        std::unique_ptr<Data> data_;  // Lives until Container destroyed
+    };
+```
+
+**RAII (Resource Acquisition Is Initialization) ensures correct lifetimes:**
+
+```cpp
+// GOOD: RAII guarantees cleanup
+void process_file(const std::string& filename) {
+    // Open file (resource acquired)
+    std::ifstream file(filename);
+    if (!file) throw std::runtime_error("failed to open");
+
+    // Use file...
+    process_lines(file);
+
+    // file.close() called automatically at function end
+    // Even if exception thrown, file closed via destructor
+}
+
+// Contrast with C (error-prone):
+FILE* file = fopen(filename, "r");
+if (!file) return;
+process_lines(file);
+if (error) return;  // LEAK! fclose not called
+fclose(file);
+
+// GOOD: Scope guards for temporary lifetimes
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    shared_data_ = new_value;  // Critical section
+}  // Lock released here, other threads can proceed
+```
+
+**Temporary lifetimes (beware of references):**
+
+```cpp
+// BAD: Reference to temporary
+const std::string& get_message() {
+    return std::string("hello");  // Temporary - destroyed at return!
+}
+
+std::string msg = get_message();  // Dangling reference!
+
+// GOOD: Return by value
+std::string get_message() {
+    return std::string("hello");  // Copied/moved to caller
+}
+
+// GOOD: Accept temporary directly (std::string_view)
+void display(std::string_view msg) {
+    std::cout << msg << std::endl;
+}
+
+display("hello");  // Temporary lives for function duration
+```
+
+**Function-local static lifetime (careful with threading):**
+
+```cpp
+// GOOD: Singleton-like pattern (C++11 thread-safe)
+Logger& get_logger() {
+    static Logger logger;  // Created once, destroyed at program exit
+    return logger;
+}
+
+// Not thread-safe in C++03, but guaranteed thread-safe in C++11+
+
+// BAD: Non-thread-safe manual singleton
+class Config {
+private:
+    static Config* instance_;
+public:
+    static Config& get_instance() {
+        if (!instance_) {
+            instance_ = new Config();  // Not thread-safe!
+        }
+        return *instance_;
+    }
+};
+```
+
+### Ownership and lifetimes decision framework
+
+| Scenario | Use | Rationale |
+|----------|-----|-----------|
+| **Single owner, exclusive access** | `unique_ptr<T>` | Default choice, move-only semantics |
+| **Multiple owners** | `shared_ptr<T>` | Reference counting manages cleanup |
+| **Non-owning reference** | `const T&` or raw pointer | Just observe, don't manage lifetime |
+| **Optional non-owning reference** | `weak_ptr<T>` (with lock()) | Break circular references, detect deletion |
+| **Return from function** | Return by value or `unique_ptr` | Caller receives ownership |
+| **Function parameter takes ownership** | `unique_ptr<T>` parameter | Make ownership transfer explicit |
+| **Function parameter reads value** | `const T&` or pass by value | Caller retains ownership |
+| **Temporary object** | Rvalue reference `&&` with move | Efficient transfer of temporary |
+| **C library returns malloc'd memory** | `unique_ptr<T, decltype(&free)>` | Wrap in RAII |
+| **Can't use smart pointers (legacy code)** | Document ownership clearly | Prevent leaks and use-after-free |
+
+**Key principle:** Ownership must be explicit and unambiguous. When reading code, you should immediately understand who is responsible for cleanup. Use smart pointers to make ownership mechanical (automatic) rather than relying on developer discipline (manual).
