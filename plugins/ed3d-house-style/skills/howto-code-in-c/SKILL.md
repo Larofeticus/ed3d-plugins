@@ -2235,3 +2235,435 @@ void process_message(const Message& msg) {
 | **Resource management** | Implement Rule of Five | Correct copy/move semantics |
 | **Non-copyable resource** | =delete copy, allow move | Enforce unique ownership |
 | **Simple group of related functions** | Free functions in namespace | No OO overhead if not needed |
+
+## Const correctness
+
+**Const correctness** is a compile-time mechanism that enforces immutability contracts. By marking data as const, you tell the compiler and other developers that certain values won't be modified, catching violations at compile time before they become bugs.
+
+### The const promise
+
+**Core principle:** const means "I promise not to modify this through this interface".
+
+```cpp
+// GOOD: const variable - compile-time enforcement of immutability
+const int max_items = 100;
+// max_items = 200;  // COMPILER ERROR
+
+// GOOD: const reference parameter - no copy overhead, no modification
+void process_items(const std::vector<int>& items) {
+    // items.push_back(1);  // COMPILER ERROR: can't modify
+    for (int item : items) {
+        // Use item...
+    }
+}
+
+// GOOD: const member function - promises not to modify object state
+class Counter {
+    int value_ = 0;
+
+public:
+    int get_value() const {
+        // return value_++;  // COMPILER ERROR: can't modify
+        return value_;
+    }
+
+    void increment() {
+        value_++;  // OK: non-const member can modify
+    }
+};
+
+// GOOD: const object ensures only const member functions can be called
+const Counter c;
+c.get_value();   // OK: const function
+// c.increment();  // COMPILER ERROR: non-const function requires non-const object
+```
+
+**Why const matters:**
+- **Compile-time verification:** Errors caught before runtime
+- **Intent documentation:** Code clearly shows what won't be modified
+- **Optimization opportunities:** Compiler can optimize knowing value won't change
+- **Prevents accidental modification:** Especially critical in long functions or when refactoring
+
+### Const member functions
+
+**Inspector methods** (methods that read without modifying) should be marked const.
+
+```cpp
+// GOOD: Clear intent with const
+class Cache {
+    std::map<std::string, std::string> data_;
+    mutable int access_count_ = 0;  // mutable allows modification in const functions
+
+public:
+    // const member function - doesn't modify cache data
+    std::optional<std::string> get(const std::string& key) const {
+        access_count_++;  // OK: mutable member
+        auto it = data_.find(key);
+        return it != data_.end() ? std::optional(it->second) : std::nullopt;
+    }
+
+    // Non-const member function - modifies cache
+    void set(const std::string& key, const std::string& value) {
+        data_[key] = value;
+    }
+
+    // Const function - read-only
+    int get_access_count() const {
+        return access_count_;
+    }
+
+    // Non-const function - modifies state
+    void clear() {
+        data_.clear();
+        access_count_ = 0;
+    }
+};
+
+// Usage: const vs non-const calls
+Cache cache;
+cache.set("key1", "value1");           // OK: non-const function
+cache.get("key1");                     // OK: const function
+
+const Cache const_cache;
+// const_cache.set("key2", "value2");  // ERROR: set() not const
+const_cache.get("key1");               // OK: const function
+```
+
+**const overloading:** Provide both const and non-const versions for different behavior.
+
+```cpp
+// GOOD: Different behavior for const vs non-const
+class Vector {
+private:
+    std::vector<int> data_;
+
+public:
+    // Non-const version - returns modifiable reference
+    int& operator[](int index) {
+        return data_[index];
+    }
+
+    // Const version - returns immutable reference
+    const int& operator[](int index) const {
+        return data_[index];
+    }
+
+    // Read-only access
+    bool contains(int value) const {
+        return std::find(data_.begin(), data_.end(), value) != data_.end();
+    }
+};
+
+// Usage
+Vector vec;
+vec[0] = 42;                           // Calls non-const operator[]
+
+const Vector const_vec = vec;
+int val = const_vec[0];                // Calls const operator[]
+// const_vec[0] = 100;                 // ERROR: const operator[] returns const int&
+```
+
+**BAD: Bypassing const (use sparingly):**
+
+```cpp
+// BAD: Casting away const (usually indicates design problem)
+class Logger {
+    mutable std::vector<std::string> messages_;
+
+public:
+    void log(const std::string& msg) const {
+        // Can modify mutable member in const function
+        messages_.push_back(msg);  // OK with mutable
+    }
+};
+
+// Very BAD: const_cast (avoid except in C interop)
+void use_c_function(const std::string& str) {
+    // If the C function incorrectly takes non-const char* but doesn't modify
+    c_function(const_cast<char*>(str.c_str()));  // Last resort only
+}
+```
+
+### Const references and parameters
+
+**Parameter passing with const:**
+
+Const references prevent copying large objects and prevent accidental modification:
+
+```cpp
+// GOOD: Const reference - zero-copy, can't modify
+void process_items(const std::vector<int>& items) {
+    for (int item : items) {
+        std::cout << item << std::endl;
+    }
+    // items.push_back(1);  // ERROR: can't modify
+}
+
+// GOOD: Pass by value for small types (no const needed)
+void process_single(int value) {
+    // No const needed - value is already a copy
+    value = 42;  // Doesn't affect original
+}
+
+// GOOD: Non-const reference when function modifies parameter (rare, make intent clear)
+void get_coordinates(const Point& origin, int& x, int& y) {
+    // Fills in x and y from origin
+    x = origin.x();
+    y = origin.y();
+}
+
+// GOOD: Use std::optional for optional output (C++17+)
+std::optional<Point> find_intersection(const Line& a, const Line& b) {
+    // Returns either point or empty
+    if (parallel(a, b)) return std::nullopt;
+    return calculate_intersection(a, b);
+}
+
+// BAD: Non-const reference for input-only parameter
+void process(std::vector<int>& items) {  // Suggests modification
+    // Process items read-only
+    for (int item : items) { /* ... */ }
+    // Confusing - reader expects modification
+}
+
+// BAD: Returning non-const reference to temporary
+const std::string& get_name() {
+    std::string name = "Alice";
+    return name;  // DANGLING REFERENCE!
+}
+
+// GOOD: Return by value instead
+std::string get_name() {
+    std::string name = "Alice";
+    return name;  // Moved, not copied
+}
+```
+
+**Const propagation in template code:**
+
+```cpp
+// GOOD: Forward const-ness in generic code
+template<typename T>
+auto process(const T& input) -> decltype(input.get_value()) {
+    // Calls const version of get_value if it exists
+    return input.get_value();
+}
+
+// GOOD: Preserve const-ness with auto
+const std::vector<int> vec = {1, 2, 3};
+const auto& front = vec.front();       // Deduced as const reference
+auto iter = vec.begin();               // Deduced as const iterator
+```
+
+### Pointer const variations
+
+**Three different meanings with pointers - read right-to-left:**
+
+```cpp
+int x = 5;
+int y = 10;
+
+// 1. const T* - pointer to const T (can't modify data, can change pointer)
+const int* ptr1 = &x;
+// *ptr1 = 42;  // ERROR: can't modify data
+ptr1 = &y;     // OK: can change what pointer points to
+
+// 2. T* const - const pointer to T (can't change pointer, can modify data)
+int* const ptr2 = &x;
+*ptr2 = 42;    // OK: can modify data
+// ptr2 = &y;  // ERROR: can't change pointer
+
+// 3. const T* const - const pointer to const T (can't change either)
+const int* const ptr3 = &x;
+// *ptr3 = 42;  // ERROR: can't modify data
+// ptr3 = &y;   // ERROR: can't change pointer
+
+// Reading right-to-left rule:
+// const int* const ptr3 = &x;
+// ^   ^      ^
+// |   |      +-- const (so ptr3 is const)
+// |   +--------- int (data type)
+// +------------- const (so data is const)
+
+// Reading: ptr3 is a const pointer to const int
+```
+
+**Practical usage patterns:**
+
+```cpp
+// GOOD: const T* for functions that promise not to modify
+void display(const int* value) {
+    if (value) {
+        std::cout << *value << std::endl;
+    }
+}
+
+// GOOD: T* const for objects that own data
+class Buffer {
+private:
+    int* const data_;  // Pointer can't change, but data can be modified
+    int capacity_;
+
+public:
+    Buffer(int cap) : capacity_(cap) {
+        data_ = new int[cap];
+    }
+
+    ~Buffer() {
+        delete[] data_;
+    }
+
+    void write(int offset, int value) {
+        if (offset < capacity_) {
+            data_[offset] = value;
+        }
+    }
+};
+
+// GOOD: Return const pointer for internal data
+class Registry {
+private:
+    std::map<int, std::string> entries_;
+
+public:
+    const std::string* find(int id) const {
+        auto it = entries_.find(id);
+        return it != entries_.end() ? &it->second : nullptr;
+    }
+};
+
+// Usage of Registry
+Registry reg;
+const std::string* result = reg.find(42);
+if (result) {
+    std::cout << *result << std::endl;
+}
+```
+
+**Pointer const in function signatures:**
+
+```cpp
+// GOOD: Const pointer to const data - safest
+void inspect(const int* const ptr) {
+    if (ptr) {
+        std::cout << *ptr << std::endl;
+    }
+}
+
+// GOOD: Const pointer to mutable data (less common)
+void increment_at(int* const ptr) {
+    if (ptr) {
+        (*ptr)++;
+    }
+}
+
+// GOOD: Non-const pointer to const data
+void display(const int* ptr) {
+    // Can iterate through array without modifying data
+    for (int i = 0; i < 10; ++i) {
+        std::cout << ptr[i] << std::endl;
+    }
+}
+
+// GOOD: Non-const pointer to mutable data
+void modify(int* ptr) {
+    if (ptr) {
+        *ptr = 42;
+    }
+}
+```
+
+### const_cast usage
+
+**const_cast removes const - use only in justified cases.**
+
+```cpp
+// ACCEPTABLE: C library with non-const char* parameter
+std::string name = "Alice";
+// C function signature: int strlen_c(char* str);
+// We know strlen doesn't modify, but signature isn't const-correct
+int len = strlen_c(const_cast<char*>(name.c_str()));
+
+// ACCEPTABLE: Implementing const/non-const pair (rare)
+class Container {
+private:
+    std::vector<int> data_;
+
+    // Common implementation
+    int* find_impl(int value) {
+        for (auto& item : data_) {
+            if (item == value) return &item;
+        }
+        return nullptr;
+    }
+
+public:
+    // Non-const version
+    int* find(int value) {
+        return find_impl(value);
+    }
+
+    // Const version delegates to non-const version
+    const int* find(int value) const {
+        return const_cast<Container*>(this)->find_impl(value);
+    }
+};
+
+// BAD: Using const_cast to silence warnings (indicates design problem)
+class Logger {
+    int internal_state_;  // Should be mutable instead
+
+public:
+    void log(const std::string& msg) {
+        // BAD: Modifying in const function without mutable
+        const_cast<Logger*>(this)->internal_state_++;
+    }
+};
+
+// GOOD: Use mutable instead
+class BetterLogger {
+    mutable int call_count_ = 0;
+
+public:
+    void log(const std::string& msg) const {
+        call_count_++;  // OK: mutable allows modification
+    }
+};
+
+// VERY BAD: Casting away const from immutable data
+const int constant = 42;
+int* ptr = const_cast<int*>(&constant);
+// *ptr = 100;  // UNDEFINED BEHAVIOR - modifying const memory
+```
+
+**When you must use const_cast (priority order):**
+
+1. **C interop only:** C library with non-const parameter that doesn't modify
+2. **Documented violation:** Add comment explaining why const correctness is broken
+3. **Last resort:** After considering other designs (mutable, separate functions, etc.)
+
+```cpp
+// GOOD: Document the reason
+void initialize_from_c_lib(const std::vector<int>& data) {
+    // c_lib_init requires non-const pointer but doesn't modify buffer
+    // No alternative - const_cast needed for C interop
+    c_lib_init(const_cast<int*>(data.data()), data.size());
+}
+```
+
+### Const correctness decision framework
+
+| Scenario | Use | Rationale |
+|----------|-----|-----------|
+| **Variable never changes** | `const int x = 5;` | Compiler prevents modification |
+| **Function parameter, read-only** | `const std::vector<int>& items` | Zero-copy, prevents modification |
+| **Function parameter, simple type** | `int value` (no const needed) | By value already safe |
+| **Member function doesn't modify state** | `int get() const { ... }` | Enables use with const objects |
+| **Need to modify in const function** | `mutable int counter_` | mutable member for non-essential state |
+| **Pointer to const data** | `const int* ptr` | Can change pointer, not data |
+| **Const pointer to data** | `int* const ptr` | Can change data, not pointer |
+| **Returning reference to member** | `const T& member() const` | Only if lifetime guaranteed |
+| **Return optional instead** | `std::optional<T> value()` | Safer than const reference |
+| **Must remove const for C interop** | `const_cast<...>()` | Last resort, document why |
+
+**Key principle:** const is a compile-time safety net. When const seems restrictive, it's usually revealing a design problem that should be fixed (using mutable, returning optional, or restructuring).
