@@ -1,6 +1,6 @@
 ---
 name: haiku-general-purpose
-model: haiku
+model: amazon/claude-haiku-4-5-high
 description: An unprompted generic subagent. Uses Haiku. Intended for tasks that require less thinking and analysis. Good for summarization, research, and tool calls.
 ---
 
