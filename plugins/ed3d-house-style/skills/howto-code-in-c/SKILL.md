@@ -5146,3 +5146,41 @@ void process(std::span<int> arr) {
 | "Logging everywhere helps debugging" | Excessive logging obscures real problems and slows production code. Log strategically; use debuggers. |
 | "I'll use static initialization for singletons" | Static initialization order is undefined. Use static local variables or lazy initialization instead. |
 | "Virtual destructors aren't always necessary" | Derived classes may have resources. Always make destructors virtual in polymorphic base classes (or use final). |
+
+## Red flags - STOP and refactor
+
+**NEVER:**
+- Use raw `new`/`delete` without wrapping in a smart pointer
+- Mix malloc/free with C++ objects in the same codebase
+- Return references to local variables or temporaries
+- Use C-style casts (reinterpret_cast disguised as `(type)`)
+- Catch exceptions without handling or re-throwing them
+- Write empty catch blocks or catch-all handlers
+- Use const_cast to work around const correctness
+- Dereference a pointer without checking it first (unless guaranteed by design)
+- Modify a container while iterating over it with stored iterators
+- Use global variables for state management (use classes and dependency injection instead)
+
+**ALWAYS:**
+- Use smart pointers (unique_ptr or shared_ptr) for ownership
+- Use RAII for every resource (files, locks, memory, network connections)
+- Mark move constructors and move assignment operators `noexcept`
+- Use `override` keyword when overriding virtual functions
+- Include `<memory>` when using smart pointers
+- Mark single-argument constructors `explicit` to prevent implicit conversions
+- Use const references for read-only parameters
+- Mark member functions `const` if they don't modify state
+- Check return values or mark functions with `[[nodiscard]]`
+- Use `std::optional` for optional return values instead of pointers or exceptions
+
+**YOU MUST:**
+- Have a virtual destructor in every polymorphic base class
+- Initialize all member variables (use member initializers or in-class defaults)
+- Call base class constructor from derived class constructor
+- Use appropriate equality comparison (operator== vs is operator for objects)
+- Validate all external input before using it
+- Document pre- and post-conditions of public functions
+- Use standard algorithms (std::find, std::transform) instead of raw loops
+- Clear or reset objects after moving from them if they will be used again
+- Include proper headers for all used functions (don't rely on transitive includes)
+- Test exception safety: strong guarantee when possible, basic guarantee minimum
