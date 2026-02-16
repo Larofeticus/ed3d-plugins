@@ -296,3 +296,217 @@ free(array);
 | Circular reference risk? | Add `weak_ptr` | Parent has `shared_ptr`, child has `weak_ptr` |
 | C library returns malloc'd memory? | Wrap in `unique_ptr` with custom deleter | `unique_ptr<T, decltype(&free)> p(c_lib(), &free);` |
 | C codebase, no C++ features? | `malloc`/`free` | `int* p = malloc(n * sizeof(int)); free(p);` |
+
+## Error handling
+
+Modern C++ prefers exceptions for truly exceptional conditions, with std::optional and std::expected for expected failures. C uses error codes with explicit checking.
+
+### C++ exceptions
+
+**When to use exceptions:**
+- Truly unexpected/exceptional situations
+- Error handling separated from detection by multiple calls
+- Constructor failures (no return value)
+- RAII ensures exception safety
+
+```cpp
+// GOOD: Exception with RAII
+void process_data(const std::string& filename) {
+    std::ifstream file(filename);
+    if (!file) {
+        throw std::runtime_error("failed to open: " + filename);
+    }
+    // RAII ensures file closed even if exception thrown below
+    parse_contents(file);
+}
+
+// Catch specific exceptions
+try {
+    process_data("config.json");
+} catch (const std::runtime_error& e) {
+    std::cerr << "Error: " << e.what() << std::endl;
+} catch (const std::exception& e) {
+    std::cerr << "Unexpected: " << e.what() << std::endl;
+}
+```
+
+**Exception safety guarantees:**
+- **Strong guarantee:** Operation succeeds completely or has no effect
+- **Basic guarantee:** Program remains in valid state (no leaks)
+- **No-throw guarantee:** Operation cannot fail (destructors, swap)
+
+**RAII enables exception safety:**
+```cpp
+// GOOD: Strong exception safety with RAII
+void transfer(Account& from, Account& to, double amount) {
+    std::lock_guard<std::mutex> lock1(from.mutex);
+    std::lock_guard<std::mutex> lock2(to.mutex);
+
+    if (from.balance < amount) {
+        throw InsufficientFunds();  // Locks automatically released
+    }
+
+    from.balance -= amount;
+    to.balance += amount;
+    // If exception thrown, locks still released via destructors
+}
+```
+
+### C error codes
+
+**When to use C error codes:**
+- C codebase with no C++ features
+- Performance-critical code (measure first!)
+- Integration with C libraries
+
+```c
+// C pattern: Error codes with explicit checking
+typedef enum {
+    SUCCESS = 0,
+    ERROR_INVALID_INPUT = -1,
+    ERROR_OUT_OF_MEMORY = -2,
+    ERROR_NOT_FOUND = -3
+} error_code_t;
+
+error_code_t parse_config(const char* filename, config_t* out) {
+    if (!filename || !out) {
+        return ERROR_INVALID_INPUT;
+    }
+
+    FILE* file = fopen(filename, "r");
+    if (!file) {
+        return ERROR_NOT_FOUND;
+    }
+
+    // Parse file...
+    fclose(file);
+    return SUCCESS;
+}
+
+// Usage: Must check every call
+config_t config;
+error_code_t err = parse_config("config.txt", &config);
+if (err != SUCCESS) {
+    fprintf(stderr, "Failed to parse config: %d\n", err);
+    return err;
+}
+```
+
+### std::optional (C++17)
+
+**When to use:** Expected, non-exceptional failures where function may or may not return a value. Alternative to returning `nullptr` or error codes for simple true/false outcomes.
+
+```cpp
+// GOOD: optional for expected missing values
+std::optional<int> parse_int(const std::string& str) {
+    try {
+        return std::stoi(str);
+    } catch (...) {
+        return std::nullopt;  // Expected failure
+    }
+}
+
+// Usage patterns
+if (auto result = parse_int(input)) {
+    std::cout << "Parsed: " << *result << std::endl;
+} else {
+    std::cout << "Not a valid integer" << std::endl;
+}
+
+// Provide default value
+int value = parse_int(input).value_or(42);
+
+// C++23 monadic operations
+auto doubled = parse_int(input).transform([](int x) { return x * 2; });
+```
+
+**vs nullptr:**
+```cpp
+// BAD: Nullable pointer requires nullptr checks
+int* find_value(const std::vector<int>& vec, int key) {
+    // Must return pointer to allow nullptr
+    for (auto& val : vec) {
+        if (val == key) return &val;  // Dangerous - lifetime issues
+    }
+    return nullptr;
+}
+
+// GOOD: optional expresses intent clearly
+std::optional<int> find_value(const std::vector<int>& vec, int key) {
+    for (int val : vec) {
+        if (val == key) return val;  // Value semantics, safe
+    }
+    return std::nullopt;
+}
+```
+
+### std::expected (C++23)
+
+**When to use:** Recoverable errors where caller needs details about what went wrong. Middle ground between exceptions and simple optional.
+
+```cpp
+// Error type with semantic information
+enum class ParseError {
+    invalid_syntax,
+    unexpected_eof,
+    type_mismatch
+};
+
+// GOOD: expected for errors with details
+std::expected<JsonValue, ParseError> parse_json(std::string_view input) {
+    if (input.empty()) {
+        return std::unexpected(ParseError::unexpected_eof);
+    }
+
+    // Parse logic...
+    if (syntax_error) {
+        return std::unexpected(ParseError::invalid_syntax);
+    }
+
+    return JsonValue{/* ... */};
+}
+
+// Usage with monadic chaining
+auto result = parse_json(input)
+    .and_then([](JsonValue val) { return extract_field(val, "name"); })
+    .transform([](std::string name) { return std::toupper(name); })
+    .or_else([](ParseError err) {
+        log_error("Parse failed", err);
+        return std::unexpected(err);
+    });
+
+if (result) {
+    std::cout << "Name: " << *result << std::endl;
+} else {
+    switch (result.error()) {
+        case ParseError::invalid_syntax:
+            std::cerr << "Syntax error" << std::endl;
+            break;
+        case ParseError::unexpected_eof:
+            std::cerr << "Unexpected end of input" << std::endl;
+            break;
+    }
+}
+```
+
+**Prevent ignoring errors with [[nodiscard]]:**
+```cpp
+[[nodiscard]] std::expected<Config, Error> load_config();
+
+// Compiler warning if result ignored
+load_config();  // Warning: ignoring return value
+```
+
+### Error handling decision framework
+
+| Scenario | Use | Rationale |
+|----------|-----|-----------|
+| **Exceptional, unexpected error** | C++ exceptions | Forces handling, propagates automatically |
+| **Expected true/false outcome** | `std::optional<T>` | Simple presence/absence |
+| **Recoverable error with details** | `std::expected<T,E>` | Caller needs error information |
+| **Performance-critical** | Error codes or `optional` | Zero overhead on success path |
+| **C codebase** | Error codes | No exception support in C |
+| **Constructor failure** | Exceptions | Constructors can't return error codes |
+| **Real-time/embedded** | Error codes | Exceptions often disabled |
+
+**Key principle:** Make errors hard to ignore. Exceptions can't be ignored. `[[nodiscard]]` prevents ignoring optional/expected. Error codes require explicit checks (easy to forget).
