@@ -5184,3 +5184,15 @@ void process(std::span<int> arr) {
 - Clear or reset objects after moving from them if they will be used again
 - Include proper headers for all used functions (don't rely on transitive includes)
 - Test exception safety: strong guarantee when possible, basic guarantee minimum
+
+## Reference
+
+**Authoritative sources:**
+- [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/CppCoreGuidelines) - Official best practices from C++ standards committee
+- [Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html) - Google's C++ conventions
+- [cppreference.com](https://en.cppreference.com/) - Comprehensive C++ reference
+
+**Supporting files:**
+- [cpp-standard-library.md](./cpp-standard-library.md) - STL containers, algorithms, utilities reference
+- [memory-patterns.md](./memory-patterns.md) - RAII patterns, smart pointer decision trees
+- [testing-cpp.md](./testing-cpp.md) - GoogleTest/GoogleMock patterns, sanitizer usage
