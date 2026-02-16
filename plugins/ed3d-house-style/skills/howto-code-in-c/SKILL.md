@@ -900,3 +900,563 @@ auto [x, y, name] = point;                    // Destructuring
 | **Hardware register or memory-mapped I/O** | `volatile` | Prevents compiler optimization |
 | **Shared variable in threads** | `std::atomic<T>` | Thread-safe operations |
 | **Type-only information (no runtime cost)** | `constexpr` | Zero-overhead abstraction |
+
+## Functions and signatures
+
+Function design establishes the contract between caller and implementation. C emphasizes explicit parameter passing and return codes; C++ adds overloading, templates, and special member functions for type-safe generic code.
+
+### Declaration styles: C vs C++
+
+**C function declarations (forward declarations required):**
+
+```c
+// C: Forward declaration required
+int add(int a, int b);
+
+// Implementation
+int add(int a, int b) {
+    return a + b;
+}
+
+// Function pointers
+typedef int (*operation_t)(int, int);
+operation_t op = &add;
+int result = op(5, 3);
+```
+
+**C++ function declarations (member and free functions):**
+
+```cpp
+// C++: Member function declaration in class
+class Calculator {
+public:
+    int add(int a, int b) const;      // const member function
+    static int multiply(int a, int b); // static member function
+private:
+    int subtract(int a, int b);        // private helper
+};
+
+// Implementation can be in .cpp or inline
+int Calculator::add(int a, int b) const {
+    return a + b;
+}
+
+// Lambda functions (C++11)
+auto op = [](int a, int b) { return a + b; };
+int result = op(5, 3);
+
+// std::function type erasure (avoid unless necessary)
+std::function<int(int, int)> operation = [](int a, int b) { return a + b; };
+```
+
+**Default parameters (C++, use sparingly):**
+
+```cpp
+// GOOD: Sensible defaults reduce API surface
+void render(int width, int height, bool vsync = true, int framerate = 60) {
+    // ...
+}
+render(800, 600);  // Uses vsync=true, framerate=60
+
+// BAD: Hidden dependencies make code harder to understand
+void process(int timeout = 5000, bool async = true, int retries = 3) {
+    // Caller doesn't know what defaults are without reading docs
+}
+```
+
+### Parameter passing conventions
+
+Choose parameter passing based on performance and semantics:
+
+| Parameter Type | Performance | Size | Use Case | Example |
+|---|---|---|---|---|
+| **By value** | Copy on pass | Small (< 64 bits) | Input only, simple types | `void process(int count)` |
+| **const reference** | Zero-copy | Any | Input only, prevents modification | `void process(const std::vector<int>& items)` |
+| **Non-const reference** | Zero-copy | Any | Output parameter (rare in C++) | `void get_coordinates(int& x, int& y)` |
+| **Pointer** | Address only | Fixed | Optional (can be nullptr), C-style | `void process(const Item* item)` |
+| **Rvalue reference** | Zero-copy move | Any | Sink parameters (capture ownership) | `void store(std::vector<int>&& data)` |
+| **std::optional<ref>** | Zero-copy | Fixed | Optional value (C++17+) | Use with caution; unclear semantics |
+
+**Performance analysis:**
+
+```cpp
+// GOOD: By value for small types
+void process(int x, double y, bool flag) {  // Pass by value: <= 16 bytes
+    // No indirection, cache-friendly
+}
+
+// GOOD: Const reference for large types
+void process(const std::vector<int>& items) {  // Zero-copy
+    // Prevents accidental modification
+}
+
+// BAD: Reference to temporary
+const int& get_value() {
+    int x = 42;
+    return x;  // Dangling reference!
+}
+
+// GOOD: Return by value (move semantics makes it efficient)
+std::vector<int> get_items() {
+    std::vector<int> items;
+    items.push_back(1);
+    return items;  // Moved, not copied (NRVO or move)
+}
+
+// C pattern: Pointer for optional output
+void parse(const char* input, int* out_value) {
+    if (!input || !out_value) {
+        return;  // Error
+    }
+    *out_value = atoi(input);
+}
+```
+
+**const correctness enforces contract:**
+
+```cpp
+// GOOD: const reference parameter prevents modification
+void update_ui(const std::string& message) {
+    // message = "new text";  // Compiler error!
+    display(message);
+}
+
+// GOOD: const member function (can't modify object state)
+class Logger {
+public:
+    int get_line_count() const {        // Promise not to modify
+        return line_count_;
+    }
+    void log(const std::string& msg) {  // Can modify object
+        lines_.push_back(msg);
+    }
+private:
+    std::vector<std::string> lines_;
+    int line_count_ = 0;
+};
+```
+
+### Return value patterns
+
+Choose return patterns based on whether the function always produces a value:
+
+**Return by value (default):**
+
+```cpp
+// GOOD: Simple return type with move semantics
+std::string get_name() {
+    std::string name = "Alice";
+    return name;  // Moved, not copied
+}
+
+// GOOD: Small types (int, bool)
+int calculate_sum(const std::vector<int>& items) {
+    return std::accumulate(items.begin(), items.end(), 0);
+}
+
+// GOOD: User-defined types with move semantics
+std::vector<int> get_items() {
+    std::vector<int> items;
+    items.reserve(100);
+    // Fill items...
+    return items;  // Efficient: moved
+}
+```
+
+**const reference return (rarely appropriate):**
+
+```cpp
+// GOOD: Return reference to internal state only if lifetime is guaranteed
+class Registry {
+    std::map<int, std::string> entries_;
+public:
+    const std::string& lookup(int key) const {
+        static const std::string empty;
+        auto it = entries_.find(key);
+        return it != entries_.end() ? it->second : empty;
+    }
+};
+
+// BAD: Returning reference to temporary
+const std::string& get_name() {
+    std::string name = "Alice";
+    return name;  // Dangling reference!
+}
+
+// GOOD: Use std::optional instead
+std::optional<std::string> get_name() {
+    return "Alice";
+}
+```
+
+**Pointer return (C-style, mostly avoided in modern C++):**
+
+```cpp
+// C pattern: Pointer for optional value or ownership transfer
+int* allocate_array(int size) {
+    return (int*)malloc(size * sizeof(int));  // Caller must free
+}
+
+// GOOD: C++: Return unique_ptr instead
+std::unique_ptr<int[]> allocate_array(int size) {
+    return std::make_unique<int[]>(size);     // Automatic cleanup
+}
+
+// Pointer to indicate nullable
+const Item* find_item(const std::vector<Item>& items, int key) {
+    for (const auto& item : items) {
+        if (item.id == key) return &item;  // Dangerous: lifetime issue
+    }
+    return nullptr;
+}
+
+// GOOD: Use optional instead
+std::optional<Item> find_item(const std::vector<Item>& items, int key) {
+    for (const auto& item : items) {
+        if (item.id == key) return item;  // Safe: value semantics
+    }
+    return std::nullopt;
+}
+```
+
+**std::optional (C++17):**
+
+```cpp
+// GOOD: Return optional for functions that might not produce value
+std::optional<int> parse_int(const std::string& str) {
+    try {
+        return std::stoi(str);
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
+// Usage with pattern matching
+if (auto value = parse_int("42")) {
+    std::cout << "Value: " << *value << std::endl;
+} else {
+    std::cout << "Invalid integer" << std::endl;
+}
+
+// Provide default
+int value = parse_int("42").value_or(0);
+```
+
+### Function overloading (C++ only)
+
+Overloading allows same name with different parameter types. Use carefully to avoid confusion.
+
+```cpp
+// GOOD: Overloading for semantic clarity
+void display(int number) {
+    std::cout << "Number: " << number << std::endl;
+}
+
+void display(const std::string& text) {
+    std::cout << "Text: " << text << std::endl;
+}
+
+void display(double value) {
+    std::cout << "Float: " << value << std::endl;
+}
+
+display(42);           // Calls display(int)
+display("hello");      // Calls display(const std::string&)
+display(3.14);         // Calls display(double)
+
+// GOOD: Overloading with const
+class Buffer {
+public:
+    int& get(int index) {           // Non-const: return mutable reference
+        return data_[index];
+    }
+    const int& get(int index) const { // Const: return const reference
+        return data_[index];
+    }
+private:
+    std::vector<int> data_;
+};
+
+// BAD: Overloading that differs only in const
+void process(int* ptr) {            // Different from below
+    *ptr = 42;
+}
+void process(const int* ptr) {       // Different signature - OK
+    std::cout << *ptr << std::endl;
+}
+
+// BAD: Overloading that differs in difficult-to-understand ways
+void calculate(int x, int y);       // v1
+void calculate(int x);              // v2 - caller confused about default
+```
+
+**Overload resolution (function matching order):**
+
+```cpp
+// C++ uses overload resolution: exact match > conversion > template
+void func(int);
+void func(double);
+
+func(5);              // Exact match: func(int)
+func(5.5);            // Exact match: func(double)
+func(5u);             // Conversion needed: either works (ambiguous!)
+// ambiguity error on func(5u) - resolves to neither int nor double perfectly
+```
+
+### Special member functions: Rule of Five
+
+The **Rule of Five** states: if you define any of these, define all five:
+1. Destructor
+2. Copy constructor
+3. Copy assignment operator
+4. Move constructor (C++11)
+5. Move assignment operator (C++11)
+
+**Why it matters:** Resource management, deep copies, move semantics.
+
+```cpp
+// GOOD: Complete Rule of Five
+class Resource {
+    int* data_;
+    int size_;
+
+public:
+    // Constructor
+    Resource(int s) : size_(s) {
+        data_ = new int[s];
+    }
+
+    // Destructor - releases resources
+    ~Resource() {
+        delete[] data_;
+    }
+
+    // Copy constructor - deep copy
+    Resource(const Resource& other) : size_(other.size_) {
+        data_ = new int[size_];
+        std::copy(other.data_, other.data_ + size_, data_);
+    }
+
+    // Copy assignment - self-assignment safe, deep copy
+    Resource& operator=(const Resource& other) {
+        if (this == &other) return *this;  // Self-assignment guard
+        delete[] data_;
+        size_ = other.size_;
+        data_ = new int[size_];
+        std::copy(other.data_, other.data_ + size_, data_);
+        return *this;
+    }
+
+    // Move constructor - transfer ownership
+    Resource(Resource&& other) noexcept
+        : data_(other.data_), size_(other.size_) {
+        other.data_ = nullptr;
+        other.size_ = 0;
+    }
+
+    // Move assignment - transfer ownership, release old resources
+    Resource& operator=(Resource&& other) noexcept {
+        if (this == &other) return *this;
+        delete[] data_;
+        data_ = other.data_;
+        size_ = other.size_;
+        other.data_ = nullptr;
+        other.size_ = 0;
+        return *this;
+    }
+};
+
+// Usage demonstrates copy vs move
+Resource create_resource(int size) {
+    Resource res(size);
+    return res;  // Move constructor called (not copy)
+}
+
+Resource res1(100);
+Resource res2 = res1;              // Copy constructor
+Resource res3 = std::move(res1);   // Move constructor (res1 now empty)
+res2 = res3;                       // Copy assignment
+res2 = std::move(res3);            // Move assignment
+```
+
+**When Rule of Five isn't needed (default behavior works):**
+
+```cpp
+// GOOD: No custom destructor = no custom Rule of Five
+class SimpleData {
+    std::string name_;        // Manages its own lifetime
+    std::vector<int> values_; // Manages its own lifetime
+    int count_;               // POD - no cleanup needed
+public:
+    SimpleData() = default;
+    // Copy/move generated automatically by compiler
+    // Calls copy/move of string and vector
+};
+```
+
+**Default the rule of five when not implementing custom behavior:**
+
+```cpp
+class MyClass {
+public:
+    // Explicitly = default to use compiler-generated
+    ~MyClass() = default;
+    MyClass(const MyClass&) = default;
+    MyClass& operator=(const MyClass&) = default;
+    MyClass(MyClass&&) = default;
+    MyClass& operator=(MyClass&&) = default;
+private:
+    std::unique_ptr<int> data_;  // Compiler does the right thing
+};
+```
+
+### const member functions and constexpr
+
+**const member functions** promise not to modify object state:
+
+```cpp
+class Counter {
+    mutable int access_count_ = 0;
+    int value_ = 0;
+
+public:
+    // const member function - can't modify value_
+    int get_value() const {
+        access_count_++;           // OK: mutable member
+        // value_ = 42;             // ERROR: modifies non-mutable
+        return value_;
+    }
+
+    // Non-const member function - can modify
+    void set_value(int v) {
+        value_ = v;
+    }
+};
+
+// Const reference parameter typically calls const member functions
+void use_counter(const Counter& c) {
+    c.get_value();      // OK: calls const version
+    // c.set_value(42);  // ERROR: set_value not const
+}
+```
+
+**constexpr functions (evaluated at compile time):**
+
+```cpp
+// GOOD: constexpr for compile-time computation
+constexpr int factorial(int n) {
+    return n <= 1 ? 1 : n * factorial(n - 1);
+}
+
+// Evaluated at compile time
+constexpr int fact5 = factorial(5);  // 120 (compile-time)
+
+int value = get_user_input();
+int fact_value = factorial(value);   // Runtime (value not compile-time constant)
+
+// GOOD: constexpr with std containers (C++20)
+constexpr std::vector<int> get_sequence() {
+    std::vector<int> v;
+    for (int i = 0; i < 10; i++) {
+        v.push_back(i * i);
+    }
+    return v;
+}
+
+// constexpr member function
+class Point {
+    int x_ = 0, y_ = 0;
+public:
+    constexpr int get_x() const { return x_; }
+    constexpr int get_y() const { return y_; }
+};
+
+constexpr Point p{3, 4};
+constexpr int x = p.get_x();  // 3 at compile time
+```
+
+**Benefits of constexpr:**
+- Compile-time computation (zero runtime cost)
+- Improves code clarity (function does same thing always)
+- Enables template metaprogramming
+
+### Inline and linkage
+
+**inline keyword (modern usage is different):**
+
+```cpp
+// OLD: inline told compiler to inline (modern compilers ignore this)
+inline int add(int a, int b) {
+    return a + b;
+}
+
+// MODERN: Use inline to define in header without linker errors
+// Multiple translation units can safely include this
+inline int add(int a, int b) {
+    return a + b;
+}
+
+// NO inline needed for member functions defined in class body
+class Calculator {
+public:
+    int add(int a, int b) {  // Implicitly inline
+        return a + b;
+    }
+
+    // If defined outside, mark inline to avoid linker errors
+    int multiply(int a, int b);
+};
+inline int Calculator::multiply(int a, int b) {
+    return a * b;
+}
+```
+
+**External linkage (default for functions):**
+
+```cpp
+// In header (shared across translation units)
+void public_function();  // External linkage - visible everywhere
+
+// In .cpp (internal linkage)
+static void internal_function() { }  // Static: internal linkage only
+
+// C++: Use anonymous namespace instead
+namespace {
+    void internal_function() { }      // Internal linkage
+}
+```
+
+**Function templates require definition in header:**
+
+```cpp
+// GOOD: Template in header (must be complete)
+template<typename T>
+T add(T a, T b) {
+    return a + b;
+}
+
+// GOOD: Explicit instantiation declaration/definition
+template<typename T>
+T multiply(T a, T b);  // Declaration
+
+// Can instantiate for specific types in .cpp
+template int multiply<int>(int, int);
+template double multiply<double>(double, double);
+```
+
+### Functions and signatures decision framework
+
+| Scenario | Choice | Rationale |
+|----------|--------|-----------|
+| **Simple input (< 64 bits)** | Pass by value | No indirection overhead |
+| **Large object, read-only** | Pass const reference | Zero-copy, prevents modification |
+| **Output parameter (rare)** | Pass non-const reference | Explicit that object will be modified |
+| **Optional parameter** | Use default argument carefully | Simpler API surface |
+| **Optional return value** | `std::optional<T>` | Safe, forces handling |
+| **Many parameter groups** | Bundle in struct or use builder pattern | Improves readability |
+| **Function needs to transfer ownership** | Use unique_ptr or return by value | Clear responsibility |
+| **Member function doesn't modify state** | Mark const | Enables use with const objects |
+| **Resource (RAII wrapper)** | Implement Rule of Five | Correct copy/move semantics |
+| **Algorithm logic same for multiple types** | Use template | Type-safe generic code |
+| **Performance-critical computation** | Use constexpr if possible | Compile-time evaluation |
+| **Function only in .cpp** | Use anonymous namespace or static | Internal linkage, no export |
