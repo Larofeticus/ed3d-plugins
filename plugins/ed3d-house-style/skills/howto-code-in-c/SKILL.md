@@ -3246,3 +3246,263 @@ public:
 | **Can't use smart pointers (legacy code)** | Document ownership clearly | Prevent leaks and use-after-free |
 
 **Key principle:** Ownership must be explicit and unambiguous. When reading code, you should immediately understand who is responsible for cleanup. Use smart pointers to make ownership mechanical (automatic) rather than relying on developer discipline (manual).
+
+## Standard library and containers
+
+Modern C++ provides powerful standard library containers and algorithms. This section covers container selection, string handling, and common algorithms. For comprehensive reference material, see [cpp-standard-library.md](./cpp-standard-library.md).
+
+### Container selection
+
+The Standard Template Library (STL) provides containers with different performance characteristics. Choose based on access patterns and operations:
+
+| Container | Use When | Performance | Example |
+|-----------|----------|-------------|---------|
+| `std::vector<T>` | Need dynamic array, frequent random access or append | O(1) append (amortized), O(1) random access | `std::vector<int> numbers = {1, 2, 3}; numbers.push_back(4);` |
+| `std::array<T, N>` | Fixed-size array known at compile time | O(1) random access, no heap allocation | `std::array<int, 10> fixed_size;` |
+| `std::deque<T>` | Frequent insertions/deletions at both ends | O(1) front/back operations, O(1) random access | Double-ended queue for task scheduling |
+| `std::list<T>` | Frequent insertions/deletions in middle | O(1) insert/erase if iterator known | `std::list<Task> pending; pending.erase(iter);` |
+| `std::map<K, V>` | Ordered key-value pairs, iteration in order | O(log n) lookup, maintains sort order | `std::map<std::string, int> scores;` |
+| `std::set<T>` | Unique values, ordered, needs fast lookup | O(log n) insertion/lookup, no duplicates | `std::set<int> unique_ids;` |
+| `std::unordered_map<K, V>` | Fast key-value lookup, order doesn't matter | O(1) average lookup, no guaranteed order | Hash table for fast cache lookups |
+| `std::unordered_set<T>` | Fast membership testing, order doesn't matter | O(1) average contains check | `if (seen.count(value)) { ... }` |
+
+**Decision flow:**
+1. Start with `std::vector` - it's the right choice 80% of the time
+2. Need different performance? Check what operations dominate your code
+3. Avoid `std::list` unless you have explicit iterator-based insertions (not just loop-based)
+4. Unordered variants are faster only when you need hash-based lookup, not just iteration
+
+**Performance pitfalls:**
+```cpp
+// BAD: Frequent insertions at front of vector
+std::vector<int> data;
+for (int val : incoming) {
+    data.insert(data.begin(), val);  // O(n) per insertion!
+}
+
+// GOOD: Use deque for front insertions
+std::deque<int> data;
+for (int val : incoming) {
+    data.push_front(val);  // O(1)
+}
+
+// BAD: Erase elements in vector during iteration
+std::vector<int> nums = {1, 2, 3, 4, 5};
+for (int i = 0; i < nums.size(); ++i) {
+    if (nums[i] % 2 == 0) nums.erase(nums.begin() + i);  // Invalidates iterators!
+}
+
+// GOOD: Erase-remove idiom or collect to erase
+auto it = std::remove_if(nums.begin(), nums.end(), [](int x) { return x % 2 == 0; });
+nums.erase(it, nums.end());
+```
+
+### String handling: std::string vs std::string_view
+
+C++17 introduces `std::string_view` - a non-owning reference to string data. Choose based on ownership:
+
+```cpp
+// std::string - owns the data
+std::string read_file(const std::string& filename) {
+    std::ifstream file(filename);
+    std::string contents;
+    std::string line;
+    while (std::getline(file, line)) {
+        contents += line + "\n";
+    }
+    return contents;  // Caller gets ownership
+}
+
+// std::string_view - borrows a reference (C++17)
+void process_data(std::string_view data) {
+    // Efficient - no copy needed
+    // But data must outlive this function call
+    std::cout << data << std::endl;
+}
+
+// GOOD: Pass string_view for read-only function parameters
+void display(std::string_view message) {
+    std::cout << message << std::endl;
+}
+
+display("Hello");                              // No temporary created
+display(std::string("Hello"));                 // Temporary, still works
+display(owned_string);                         // Borrows from owned_string
+std::string_view partial = owned_string.substr(0, 5);  // No copy!
+
+// BAD: String view to temporary - DANGLING REFERENCE
+std::string_view bad_view() {
+    return std::string("temporary");  // Returns view to destroyed string!
+}
+
+// BAD: Storing string_view when string might be reassigned
+class DataContainer {
+    std::string data_;
+    std::string_view view_;  // DANGEROUS if data_ might reallocate
+public:
+    void set_data(const std::string& d) {
+        data_ = d;
+        view_ = data_;  // OK, but view_ invalid if data_ reallocates
+    }
+};
+
+// GOOD: string_view for parameters, std::string for storage
+class DataContainer {
+    std::string data_;
+public:
+    void set_data(std::string_view d) {
+        data_ = std::string(d);  // Convert to owned string
+    }
+
+    std::string_view get_data() const {
+        return data_;  // Safe - data_ won't change during return
+    }
+};
+```
+
+**String handling guidelines:**
+- Use `std::string` when you own the data (members, return values)
+- Use `std::string_view` for read-only function parameters (avoids copies)
+- Use `std::string_view` to represent substrings without copying
+- Never store `std::string_view` as member variable unless you control lifetime of referenced data
+- Use `std::string(view)` to convert view to owned string when needed
+
+### Algorithms and iterators
+
+C++ STL algorithms operate on iterator ranges. Common patterns:
+
+```cpp
+#include <algorithm>
+#include <numeric>
+
+std::vector<int> data = {3, 1, 4, 1, 5, 9, 2, 6};
+
+// std::find - locate first matching element
+auto it = std::find(data.begin(), data.end(), 4);
+if (it != data.end()) {
+    std::cout << "Found at position " << std::distance(data.begin(), it) << std::endl;
+}
+
+// std::sort - sort in place
+std::sort(data.begin(), data.end());
+// data = {1, 1, 2, 3, 4, 5, 6, 9}
+
+// std::sort with custom comparator
+std::sort(data.begin(), data.end(), std::greater<int>());  // Descending
+// data = {9, 6, 5, 4, 3, 2, 1, 1}
+
+// std::transform - apply function to each element
+std::vector<int> doubled;
+std::transform(data.begin(), data.end(), std::back_inserter(doubled),
+               [](int x) { return x * 2; });
+// doubled = {18, 12, 10, 8, 6, 4, 2, 2}
+
+// std::accumulate - sum/fold operation
+int sum = std::accumulate(data.begin(), data.end(), 0);
+// sum = 27
+
+// std::remove_if + erase - filter elements
+data.erase(std::remove_if(data.begin(), data.end(),
+                          [](int x) { return x < 3; }),
+           data.end());
+// data = {9, 6, 5, 4, 3}
+
+// std::find_if - find first matching condition
+auto large_it = std::find_if(data.begin(), data.end(),
+                             [](int x) { return x > 5; });
+
+// std::all_of, std::any_of, std::none_of - predicates
+bool all_positive = std::all_of(data.begin(), data.end(),
+                                 [](int x) { return x > 0; });
+
+// std::count_if - count matching elements
+int large_count = std::count_if(data.begin(), data.end(),
+                                [](int x) { return x > 5; });
+```
+
+**Iterator invalidation (container-specific):**
+
+```cpp
+std::vector<int> vec = {1, 2, 3, 4, 5};
+
+// vector - insert/erase/push_back invalidate iterators after affected position
+auto it = vec.begin();
+vec.push_back(6);          // May reallocate - all iterators invalid!
+// DON'T use it after this
+
+// deque - push_back/push_front don't invalidate iterators (unless reallocate)
+std::deque<int> deq = {1, 2, 3, 4, 5};
+auto deq_it = deq.begin();
+deq.push_back(6);         // Doesn't invalidate deq_it
+
+// list - insert/erase only invalidate affected iterators
+std::list<int> lst = {1, 2, 3, 4, 5};
+auto list_it = std::next(lst.begin());
+lst.erase(list_it);       // Only list_it invalidated, not others
+
+// map/set - insert/erase only invalidates iterator to erased element
+std::map<int, int> m = {{1, 'a'}, {2, 'b'}, {3, 'c'}};
+auto map_it = m.find(2);
+m.insert({4, 'd'});       // Doesn't invalidate map_it
+m.erase(map_it);          // Invalidates only map_it
+```
+
+### Smart pointers recap
+
+For detailed ownership patterns, see the [Memory management](#memory-management) section. Quick reference:
+
+```cpp
+// unique_ptr - sole ownership
+std::unique_ptr<Widget> widget = std::make_unique<Widget>();
+// Only this code path owns widget. No copies. Move only.
+
+// shared_ptr - shared ownership
+std::shared_ptr<Resource> resource = std::make_shared<Resource>();
+std::shared_ptr<Resource> copy = resource;  // Both own it
+// Deleted when last shared_ptr destroyed
+
+// weak_ptr - non-owning reference (break circular references)
+std::weak_ptr<Node> parent_ref = shared_parent;  // Doesn't extend lifetime
+if (auto parent = parent_ref.lock()) {  // Check if still alive
+    parent->do_something();
+}
+```
+
+Use `unique_ptr` by default. Only use `shared_ptr` when multiple owners genuinely needed.
+
+### Optional and expected error handling
+
+For expected failures (not exceptional conditions), use value types:
+
+```cpp
+#include <optional>
+#include <variant>
+
+// std::optional<T> - value may or may not exist (C++17)
+std::optional<int> parse_int(const std::string& str) {
+    try {
+        return std::stoi(str);
+    } catch (...) {
+        return std::nullopt;  // No value
+    }
+}
+
+// Usage
+if (auto value = parse_int("42")) {
+    std::cout << "Parsed: " << *value << std::endl;
+} else {
+    std::cout << "Parse failed" << std::endl;
+}
+
+// std::expected<T, E> for value + error (C++23, or boost/custom)
+// Returns either a value or an error code/message
+class Result {
+    std::variant<std::string, std::string> data_or_error_;
+    bool is_error_;
+};
+
+// For now, use std::optional for failures and exceptions for exceptional conditions
+// Link to [Error handling](#error-handling) section for detailed guidance
+```
+
+For comprehensive reference material on containers, algorithms, and STL utilities, see [cpp-standard-library.md](./cpp-standard-library.md).
