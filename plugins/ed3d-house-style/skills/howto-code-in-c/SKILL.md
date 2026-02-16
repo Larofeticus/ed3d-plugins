@@ -40,3 +40,82 @@ When under deadline pressure or focused on other concerns (performance, debuggin
 - [ ] Move semantics used for expensive-to-copy types (std::move, rvalue references)
 
 **Why this matters:** Under pressure, you'll default to muscle memory from other languages (manual memory management, no const, raw pointers). These checks catch the most common C/C++ violations.
+
+## Naming and formatting
+
+### File naming
+
+**C files:**
+- Headers: `module_name.h` (snake_case)
+- Implementation: `module_name.c` (snake_case)
+- Example: `http_parser.h`, `http_parser.c`
+
+**C++ files:**
+- Headers: `ModuleName.hpp` or `ModuleName.h` (PascalCase)
+- Implementation: `ModuleName.cpp` (PascalCase)
+- Example: `HttpParser.hpp`, `HttpParser.cpp`
+
+**Mixed C/C++ projects:**
+- Stick to one convention per project
+- Use `.h` for C-compatible headers, `.hpp` for C++-only headers
+
+### Identifier casing
+
+| Element | C Convention | C++ Convention | Example (C++) |
+|---------|-------------|----------------|------------|
+| Variables | `snake_case` | `camelCase` or `snake_case` | `userId` or `user_id` |
+| Functions | `snake_case` | `camelCase` or `snake_case` | `parseInput()` or `parse_input()` |
+| Types/Classes | `PascalCase` or `snake_case_t` | `PascalCase` | `HttpRequest` or `http_request_t` |
+| Constants | `SCREAMING_SNAKE_CASE` | `kPascalCase` or `SCREAMING_SNAKE_CASE` | `kMaxBufferSize` or `MAX_BUFFER_SIZE` |
+| Macros | `SCREAMING_SNAKE_CASE` | Avoid macros; use `constexpr` | `MAX_PATH_LEN` |
+| Enums | `SCREAMING_SNAKE_CASE` | `enum class` with `PascalCase` | `ErrorCode::InvalidInput` |
+| Namespaces | n/a | `snake_case` | `namespace http_utils` |
+
+**Decision framework:**
+- Pure C project: Use C conventions throughout
+- Pure C++ project: Choose one C++ convention and stick to it
+- Mixed project: C conventions for C files, C++ conventions for C++ files
+- When in doubt: Match the existing codebase style
+
+### Code formatting
+
+**Brace style** (Allman or K&R - pick one per project):
+
+```cpp
+// Allman style (preferred for readability)
+void function()
+{
+    if (condition)
+    {
+        // code
+    }
+}
+
+// K&R style (compact)
+void function() {
+    if (condition) {
+        // code
+    }
+}
+```
+
+**Indentation:**
+- Use 4 spaces (not tabs) for consistent display
+- Indent each nested block level
+
+**Line length:**
+- Target: 80-100 characters
+- Hard limit: 120 characters
+- Break long function calls across lines:
+  ```cpp
+  auto result = some_long_function(
+      first_arg,
+      second_arg,
+      third_arg
+  );
+  ```
+
+**Whitespace:**
+- Space after keywords: `if (condition)` not `if(condition)`
+- Space around binary operators: `a + b` not `a+b`
+- No space before function call parens: `func()` not `func ()`
