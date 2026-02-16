@@ -43,7 +43,7 @@ agents/
 name: agent-name
 description: Use when [specific triggers] - [what agent does]
 tools: Read, Grep, Glob, Bash
-model: sonnet
+model: amazon/claude-sonnet-4-5
 ---
 
 # Agent Name
@@ -256,7 +256,7 @@ For each issue:
 name: researcher
 description: Use when gathering information from the web, investigating APIs, or synthesizing documentation from multiple sources
 tools: Read, WebFetch, WebSearch, Glob
-model: sonnet
+model: amazon/claude-sonnet-4-5
 ---
 
 # Research Agent
