@@ -3506,3 +3506,315 @@ class Result {
 ```
 
 For comprehensive reference material on containers, algorithms, and STL utilities, see [cpp-standard-library.md](./cpp-standard-library.md).
+
+## Performance patterns
+
+Performance optimization is a discipline: measure first, understand bottlenecks, apply targeted fixes. This section covers profiling methodology, memory layout optimization, and move semantics for efficiency.
+
+### When to optimize: The profiling-first framework
+
+**The cardinal rule:** Profile first, measure always, optimize last.
+
+Premature optimization is the source of unreadable code and wasted engineering time. Follow this discipline:
+
+1. **Establish baseline:** Measure current performance with real-world data
+2. **Profile the hot path:** Use profiling tools to find where time/memory is actually spent (usually not where you think)
+3. **Measure before and after:** Quantify the improvement of any optimization
+4. **Avoid "intuitive" optimizations:** Your intuition about performance is usually wrong
+
+```cpp
+// WRONG: "Obviously we need to pre-allocate for efficiency"
+std::vector<Item> items;
+items.reserve(1000000);  // If you don't know the actual size, this wastes memory
+for (auto item : get_items()) {
+    items.push_back(item);  // Might only add 100 items anyway
+}
+
+// RIGHT: Measure first. If profiling shows allocation is bottleneck, then:
+std::vector<Item> items;
+if (size_t expected = estimate_item_count()) {
+    items.reserve(expected);
+}
+for (auto item : get_items()) {
+    items.push_back(item);
+}
+```
+
+**When to optimize:**
+- After profiling identifies a bottleneck
+- When measurements show > 10% improvement possible
+- When you understand why the optimization helps
+- Never on speculation alone
+
+**Never optimize:**
+- Code that runs once per program lifetime
+- Code that takes < 1% of execution time
+- Without before/after measurements
+- If it makes code significantly harder to understand
+
+### Profiling tools
+
+Different tools answer different questions. Choose based on your bottleneck:
+
+**perf (Linux) - CPU time and cache misses:**
+```bash
+# Record profile of a program
+perf record ./your_program
+
+# Analyze and show hot functions
+perf report
+
+# Generate flame graph for visualization
+perf record -F 99 ./your_program
+perf script > out.perf
+# (Use FlameGraph tools to generate SVG)
+```
+
+**gprof - Function call timing (simple, limited):**
+```bash
+# Compile with profiling support
+g++ -pg -O2 your_code.cpp -o your_program
+
+# Run program
+./your_program
+
+# Generate profile report
+gprof ./your_program gmon.out
+
+# Shows: function call counts, cumulative time, call graph
+```
+
+**Valgrind cachegrind - Cache behavior:**
+```bash
+# Profile cache misses and branch prediction
+valgrind --tool=cachegrind ./your_program
+
+# Generate visualization
+cg_annotate cachegrind.out.* | head -50
+```
+
+**Memory profiling with Valgrind:**
+```bash
+# Detect memory leaks and allocation patterns
+valgrind --leak-check=full ./your_program
+
+# Massif tool shows heap memory over time
+valgrind --tool=massif ./your_program
+ms_print massif.out.*
+```
+
+**Choosing a tool:**
+- **Need CPU hotspots?** → Use `perf` on Linux (most detailed)
+- **Need call graph?** → Use `gprof` (simpler but less accurate)
+- **Need cache analysis?** → Use `perf` with cache event counting
+- **Need cache visualization?** → Use `valgrind cachegrind`
+- **Need memory profile?** → Use `valgrind massif`
+
+### Memory layout and cache efficiency
+
+Modern CPUs are built around caching. Accessing memory that's in cache is ~100x faster than main memory. Structure layout matters.
+
+**Cache lines and struct packing:**
+
+```cpp
+// BAD: Poor memory layout
+struct UserData {
+    char name[64];      // Accessed frequently
+    int user_id;        // Accessed frequently
+    bool is_admin;      // Accessed rarely
+    double created_at;  // Accessed rarely
+    std::vector<int> tags;  // Pointer to dynamic data
+};
+// Cache misses when accessing frequently-used fields scattered across cache lines
+
+// GOOD: Organize by access frequency
+struct UserData {
+    // Hot fields (accessed frequently) together
+    int user_id;
+    char name[64];
+    bool is_admin;
+    // Cold fields (accessed rarely) separate
+    double created_at;
+    std::vector<int> tags;
+};
+// Hot fields fit in fewer cache lines
+
+// GOOD: Use alignas for alignment-sensitive code
+struct CacheLine {
+    alignas(64) int counter;  // 64-byte alignment matches typical L1 cache line
+};
+
+// BAD: False sharing - different cores accessing same cache line
+struct SharedData {
+    std::atomic<int> counter1;  // Core 1 modifies this
+    std::atomic<int> counter2;  // Core 2 modifies this - SAME CACHE LINE!
+};
+// Cache line bounces between cores - performance degrades
+
+// GOOD: Separate hot data with padding
+struct SharedData {
+    std::atomic<int> counter1;
+    char padding[56];  // 64-byte cache line alignment
+    std::atomic<int> counter2;
+};
+```
+
+**Access pattern optimization:**
+
+```cpp
+// BAD: Strided access (jumping through memory)
+std::vector<std::vector<int>> matrix(1000, std::vector<int>(1000));
+int sum = 0;
+for (int j = 0; j < 1000; ++j) {
+    for (int i = 0; i < 1000; ++i) {
+        sum += matrix[i][j];  // Column-major access - cache misses!
+    }
+}
+
+// GOOD: Sequential access
+int sum = 0;
+for (int i = 0; i < 1000; ++i) {
+    for (int j = 0; j < 1000; ++j) {
+        sum += matrix[i][j];  // Row-major access - cache hits!
+    }
+}
+```
+
+### Move semantics for performance
+
+Move semantics avoid expensive copies. Use them when transferring ownership.
+
+```cpp
+// Move constructor - transfers ownership without copying
+class DataBuffer {
+    std::vector<char> buffer_;
+public:
+    DataBuffer(std::vector<char>&& data) : buffer_(std::move(data)) {
+        // Takes ownership, no copy
+    }
+};
+
+// GOOD: Move construction (zero copy)
+std::vector<char> data = read_large_file("bigfile.bin");
+DataBuffer buf(std::move(data));  // Moves, doesn't copy
+
+// BAD: Unnecessary copy (data still in scope)
+std::vector<char> data = read_large_file("bigfile.bin");
+DataBuffer buf(data);  // Copies all bytes!
+
+// RVO - compiler optimization (return value optimization)
+std::vector<int> create_result() {
+    std::vector<int> result = expensive_calculation();
+    return result;  // Compiler elides copy - returned directly to caller
+}
+
+// NRVO - named return value optimization
+std::vector<int> build_array() {
+    std::vector<int> output;
+    output.push_back(1);
+    output.push_back(2);
+    return output;  // Compiler may elide copy even with named variable
+}
+
+// GOOD: Let compiler optimize returns - don't try to force move
+std::vector<int> get_values() {
+    return std::vector<int>{1, 2, 3};  // Compiler applies RVO
+}
+
+// Move in loops (swap approach for update-in-place)
+class Pipeline {
+    std::vector<Task> queue_;
+public:
+    void process() {
+        std::vector<Task> new_queue;
+        for (auto& task : queue_) {
+            if (task.should_keep()) {
+                new_queue.push_back(std::move(task));  // Move, not copy
+            }
+        }
+        queue_ = std::move(new_queue);  // Swap ownership
+    }
+};
+```
+
+**Move semantics guidelines:**
+- Use `std::move()` when transferring ownership of expensive objects
+- Prefer `std::move()` in constructors, assignment operators, and move-returning functions
+- Don't `std::move()` primitives (int, double) - overhead isn't worth it
+- Let compiler apply RVO/NRVO - don't force moves that inhibit optimization
+
+### Common performance mistakes
+
+**Mistake 1: Unnecessary copies**
+
+```cpp
+// BAD: Copy-and-modify pattern
+std::string format_name(const std::string& first, const std::string& last) {
+    std::string result = first;  // Copy
+    result += " ";
+    result += last;              // Copy again during concatenation
+    return result;               // Copy on return
+}
+
+// GOOD: Build in place
+std::string format_name(std::string_view first, std::string_view last) {
+    std::string result;
+    result.reserve(first.size() + last.size() + 1);
+    result += first;  // Append without extra copy
+    result += " ";
+    result += last;
+    return result;    // RVO applies
+}
+```
+
+**Mistake 2: Inefficient algorithms**
+
+```cpp
+// BAD: O(n^2) when better exists
+std::vector<int> data = get_data();
+std::vector<int> unique_values;
+for (int val : data) {
+    if (std::find(unique_values.begin(), unique_values.end(), val) == unique_values.end()) {
+        unique_values.push_back(val);  // Linear search in vector - O(n^2)!
+    }
+}
+
+// GOOD: O(n log n) with set
+std::set<int> unique_set(data.begin(), data.end());
+std::vector<int> unique_values(unique_set.begin(), unique_set.end());
+
+// Or use unordered_set for O(n) average
+std::unordered_set<int> unique_set(data.begin(), data.end());
+```
+
+**Mistake 3: Premature optimization**
+
+```cpp
+// WRONG: Optimizing single-use initialization
+class Settings {
+    int value = 0;
+public:
+    void init() {
+        // Pre-computed lookup table for single init call - unnecessary complexity
+        static const int lookup[] = {10, 20, 30};
+        value = lookup[0];  // "Optimization" with no measurable benefit
+    }
+};
+
+// RIGHT: Use clear, simple code
+class Settings {
+    int value = 0;
+public:
+    void init() {
+        value = 10;  // Obvious, single copy, no performance impact
+    }
+};
+
+// Only optimize after profiling shows this is a bottleneck
+```
+
+**Performance mistake checklist:**
+- Did you profile before optimizing? (No → stop)
+- Did you measure improvement? (No → revert)
+- Is the code now harder to understand? (Yes → reconsider)
+- Is this the hottest bottleneck? (No → optimize something else)
