@@ -67,7 +67,7 @@ enum OrderStatus { PENDING, SHIPPED, DELIVERED }
 
 // GOOD: interfaces - noun or adjective
 interface Closeable { }
-interface UserRepository { }
+interface UserStore { }
 
 // BAD: verbs, abbreviations, non-descriptive names
 class ProcessUser { }   // verb
@@ -412,14 +412,20 @@ public sealed interface PaymentResult
     record Error(String message, Throwable cause) implements PaymentResult { }
 }
 
-// Exhaustive switch (compiler enforces all cases covered)
+// Dispatch on type using if-instanceof (Java 17 GA)
 String describe(PaymentResult result) {
-    return switch (result) {
-        case PaymentResult.Success s -> "Charged " + s.amount();
-        case PaymentResult.Declined d -> "Declined: " + d.reason();
-        case PaymentResult.Error e -> "Error: " + e.message();
-    };
+    if (result instanceof PaymentResult.Success s) {
+        return "Charged " + s.amount();
+    } else if (result instanceof PaymentResult.Declined d) {
+        return "Declined: " + d.reason();
+    } else if (result instanceof PaymentResult.Error e) {
+        return "Error: " + e.message();
+    } else {
+        throw new IllegalStateException("Unknown PaymentResult: " + result);
+    }
 }
+
+// Note: Pattern matching in switch expressions (exhaustive type dispatch) is available GA from Java 21.
 ```
 
 ### Pattern Matching for instanceof (Java 16)
@@ -479,7 +485,7 @@ The closing `"""` determines the indentation baseline; align it with the content
 int days = switch (month) {
     case JANUARY, MARCH, MAY, JULY, AUGUST, OCTOBER, DECEMBER -> 31;
     case APRIL, JUNE, SEPTEMBER, NOVEMBER -> 30;
-    case FEBRUARY -> year % 4 == 0 ? 29 : 28;
+    case FEBRUARY -> java.time.Year.isLeap(year) ? 29 : 28;
 };
 
 // GOOD: switch expression with blocks
@@ -552,7 +558,7 @@ String name = findById(userId)
     .orElse("Anonymous");
 
 // BAD: Optional field
-private Optional<String> middleName;  // use @Nullable or just String middleName (nullable)
+private Optional<String> middleName;  // use String middleName (nullable field, document the contract)
 
 // BAD: Optional parameter
 void process(Optional<String> name) { }  // use overloads or @Nullable
@@ -588,7 +594,7 @@ opt.get();  // throws NoSuchElementException; always use orElse/orElseGet/orElse
 **Streams excel at collection transformations. Loops are clearer for stateful, sequential, or early-exit logic.**
 
 ```java
-// GOOD: stream for transformation pipeline
+// GOOD: stream for transformation pipeline (assuming User is a record)
 List<String> activeEmails = users.stream()
     .filter(User::isActive)
     .map(User::email)
@@ -683,7 +689,9 @@ public byte[] readFile(Path path) throws IOException {
 try (var connection = dataSource.getConnection();
      var statement = connection.prepareStatement(sql)) {
     statement.setString(1, userId);
-    return statement.executeQuery();
+    try (var rs = statement.executeQuery()) {
+        return rs.next() ? mapUser(rs) : Optional.empty();
+    }
 }
 
 // BAD: manual finally block
@@ -732,7 +740,7 @@ try {
 try {
     riskyOperation();
 } catch (Exception e) { ... }       // too broad
-} catch (RuntimeException e) { ... } // too broad
+catch (RuntimeException e) { ... } // too broad
 
 // GOOD: catch what you can handle
 try {
@@ -823,8 +831,9 @@ public enum Planet {
         this.radius = radius;
     }
 
+    private static final double G = 6.67300E-11;  // gravitational constant
+
     double surfaceGravity() {
-        final double G = 6.67300E-11;
         return G * mass / (radius * radius);
     }
 }
@@ -975,7 +984,7 @@ new BigDecimal(0.1)  // 0.100000000000000005551115123125782702118158340454101562
 
 // CORRECT: always construct BigDecimal from String or long
 new BigDecimal("0.1")
-BigDecimal.valueOf(10, 1)  // 1.0
+BigDecimal.valueOf(1, 1)   // 0.1
 ```
 
 ### NullPointerException
