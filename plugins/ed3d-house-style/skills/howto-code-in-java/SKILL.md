@@ -739,7 +739,7 @@ try {
 // BAD: catching broad exception types
 try {
     riskyOperation();
-} catch (Exception e) { ... }  // too broad — swallows programming errors
+} catch (Exception e) { ... }  // too broad -- swallows programming errors
 
 // GOOD: catch what you can handle
 try {
