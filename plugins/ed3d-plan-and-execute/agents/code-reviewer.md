@@ -77,6 +77,7 @@ If `coding-effectively` available:
 - Verify file pattern comments present
 
 For language-specific skills:
+- Java: naming conventions, Javadoc, immutability, records, sealed classes, BigDecimal for money
 - TypeScript: type vs interface, function styles, immutability
 - React: hooks usage, component patterns, anti-patterns
 - Postgres: transaction safety, naming conventions

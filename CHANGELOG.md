@@ -1,5 +1,18 @@
 # Changelog
 
+## ed3d-house-style 1.2.0
+
+Add comprehensive Java house style skill.
+
+**New:**
+- `howto-code-in-java` skill: comprehensive Java coding standards targeting Java 17 (LTS), covering naming conventions, Javadoc, code style, immutability (records, final fields, immutable collections), modern Java features up to Java 17 (records, sealed classes, pattern matching instanceof, text blocks, switch expressions, var), Optional, Streams, exception handling, generics, enums, collections, sharp edges (== vs equals, Integer caching, BigDecimal for money, NPE, integer overflow), common mistakes table, and red flags
+
+**Changed:**
+- `coding-effectively`: added `howto-code-in-java` to conditional sub-skills list
+- `code-reviewer` agent: added Java to language-specific review guidance
+- `task-implementor-fast` agent: added `howto-code-in-java` to language skill examples
+- `task-bug-fixer` agent: added `howto-code-in-java` to language skill examples
+
 ## ed3d-extending-claude 1.0.4
 
 Add model-level testing guidance to testing-skills-with-subagents.

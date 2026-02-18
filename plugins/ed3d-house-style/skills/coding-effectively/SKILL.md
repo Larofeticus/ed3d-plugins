@@ -13,6 +13,7 @@ user-invocable: false
 - `defense-in-depth` - Validate at every layer data passes through
 
 **CONDITIONAL:** Use these sub-skills when applicable:
+- `howto-code-in-java` - Java code
 - `howto-code-in-typescript` - TypeScript code
 - `howto-develop-with-postgres` - PostgreSQL database code
 - `programming-in-react` - React frontend code
