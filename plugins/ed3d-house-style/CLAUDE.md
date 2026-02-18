@@ -39,6 +39,7 @@ This skill applies Test-Driven Development principles to documentation and ensur
    ---
    name: skill-name-with-hyphens
    description: Use when [triggering conditions] - [what it does, third person]
+   user-invocable: [true or false]
    ---
    ```
 
