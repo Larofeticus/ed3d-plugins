@@ -739,8 +739,7 @@ try {
 // BAD: catching broad exception types
 try {
     riskyOperation();
-} catch (Exception e) { ... }       // too broad
-catch (RuntimeException e) { ... } // too broad
+} catch (Exception e) { ... }  // too broad — swallows programming errors
 
 // GOOD: catch what you can handle
 try {
@@ -823,6 +822,8 @@ public enum Planet {
     VENUS(4.869e+24, 6.0518e6),
     EARTH(5.976e+24, 6.37814e6);
 
+    private static final double G = 6.67300E-11;  // gravitational constant
+
     private final double mass;   // in kilograms
     private final double radius; // in meters
 
@@ -830,8 +831,6 @@ public enum Planet {
         this.mass = mass;
         this.radius = radius;
     }
-
-    private static final double G = 6.67300E-11;  // gravitational constant
 
     double surfaceGravity() {
         return G * mass / (radius * radius);
