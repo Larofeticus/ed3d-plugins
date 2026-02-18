@@ -561,7 +561,7 @@ String name = findById(userId)
 private Optional<String> middleName;  // use String middleName (nullable field, document the contract)
 
 // BAD: Optional parameter
-void process(Optional<String> name) { }  // use overloads or @Nullable
+void process(Optional<String> name) { }  // use overloads or accept null with a null check
 
 // BAD: Optional in collections
 List<Optional<User>> users;  // filter nulls instead
