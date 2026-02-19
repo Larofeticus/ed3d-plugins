@@ -104,7 +104,7 @@ EOF
 )"
 ```
 
-Then: Update project context (Step 5), then cleanup worktree (Step 6)
+Then: Update project context (Step 5)
 
 #### Option 3: Keep As-Is
 
@@ -168,7 +168,7 @@ Before merging or creating a PR, invoke `ed3d-extending-claude:project-claude-li
 
 ### Step 6: Cleanup Worktree
 
-**For Options 1, 2, 4:**
+**For Options 1 and 4:**
 
 Check if in worktree:
 ```bash
@@ -176,11 +176,39 @@ git worktree list | grep $(git branch --show-current)
 ```
 
 If yes:
+
+First, navigate to the main repo root so the shell remains usable after the worktree directory is deleted:
+
+```bash
+REPO_ROOT=$(git worktree list | head -1 | awk '{print $1}')
+cd "$REPO_ROOT"
+```
+
+Then remove the worktree:
+
 ```bash
 git worktree remove <worktree-path>
 ```
 
-**For Option 3:** Keep worktree.
+**If `git worktree remove` exits with code 128 (untracked files present):**
+
+List the untracked files to see what's there:
+
+```bash
+git -C <worktree-path> ls-files --others --exclude-standard
+```
+
+These are likely planning artifacts from `writing-implementation-plans` (e.g., files in `docs/implementation-plans/`). They are safe to discard. Confirm with the user before force-removing:
+
+> "The worktree contains untracked files (listed above), likely planning artifacts. OK to force-remove and discard them?"
+
+If the user confirms:
+
+```bash
+git worktree remove --force <worktree-path>
+```
+
+**For Options 2 and 3:** Keep worktree.
 
 ### Step 7: Remind About Test Plan
 
