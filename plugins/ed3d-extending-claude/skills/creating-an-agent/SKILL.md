@@ -43,7 +43,7 @@ agents/
 name: agent-name
 description: Use when [specific triggers] - [what agent does]
 tools: Read, Grep, Glob, Bash
-model: amazon/claude-sonnet-4-5
+model: claude-sonnet-4-5
 ---
 
 # Agent Name
@@ -179,7 +179,7 @@ What the agent should NOT do:
 
 Specify in frontmatter:
 ```yaml
-model: amazon/claude-opus-4-6-high
+model: claude-opus-4-6
 ```
 
 ## Testing Agents
@@ -223,7 +223,7 @@ If agent fails:
 name: code-reviewer
 description: Use when reviewing code changes, pull requests, or verifying implementation quality - analyzes for bugs, style issues, and best practices
 tools: Read, Grep, Glob, Bash
-model: amazon/claude-opus-4-6-high
+model: claude-opus-4-6
 ---
 
 # Code Reviewer
@@ -256,7 +256,7 @@ For each issue:
 name: researcher
 description: Use when gathering information from the web, investigating APIs, or synthesizing documentation from multiple sources
 tools: Read, WebFetch, WebSearch, Glob
-model: amazon/claude-sonnet-4-5
+model: claude-sonnet-4-5
 ---
 
 # Research Agent
