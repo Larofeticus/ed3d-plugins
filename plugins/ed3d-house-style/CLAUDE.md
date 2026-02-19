@@ -34,7 +34,7 @@ This skill applies Test-Driven Development principles to documentation and ensur
 
 **Core requirements:**
 
-1. **YAML frontmatter** with exactly two fields:
+1. **YAML frontmatter** with exactly three fields:
    ```yaml
    ---
    name: skill-name-with-hyphens
