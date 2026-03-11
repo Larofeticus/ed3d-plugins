@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# verify-commit-files: Check which files changed in a commit
+#
+# Usage:
+#   verify-commit-files --file "PATH" [--commit REF] [--json]
+#
+# Exit codes:
+#   0 - file was changed in commit
+#   1 - file not changed, commit not found, or not in git repository
+#   2 - invalid usage
+
+error_exit() {
+    local message="$1"
+    local exit_code="${2:-1}"
+    echo "ERROR: ${message}" >&2
+    exit "${exit_code}"
+}
+
+json_escape() {
+    local string="$1"
+    # Escape backslashes first, then quotes
+    string="${string//\\/\\\\}"
+    string="${string//\"/\\\"}"
+    echo "$string"
+}
+
+json_output=false
+file_pattern=""
+commit_ref="HEAD"
+
+while getopts ":f:c:jh-:" opt; do
+    case "$opt" in
+        f) file_pattern="$OPTARG" ;;
+        c) commit_ref="$OPTARG" ;;
+        j) json_output=true ;;
+        h)
+            cat <<EOF
+Usage: verify-commit-files --file "PATH" [OPTIONS]
+
+Check if a specific file was changed in a commit using git diff --stat.
+
+OPTIONS:
+  -f, --file PATH        File path pattern to check (required, can be glob)
+  -c, --commit REF       Commit reference (default: HEAD)
+  --json                 Output JSON: {"valid": true/false, "message": "...", "files": [...]}
+  -h                     Show this help
+
+EXIT CODES:
+  0 - File was changed in commit
+  1 - File not changed, commit not found, or not in git repository
+  2 - Invalid arguments
+
+EXAMPLES:
+  verify-commit-files -f "src/auth.ts" -c HEAD
+  verify-commit-files --file "plugins/validation-utils/*" --commit HEAD~1
+  verify-commit-files -f "README.md" --json
+EOF
+            exit 0
+            ;;
+        -)
+            case "$OPTARG" in
+                file=*) file_pattern="${OPTARG#*=}" ;;
+                commit=*) commit_ref="${OPTARG#*=}" ;;
+                json) json_output=true ;;
+                *) error_exit "Unknown option --${OPTARG}" 2 ;;
+            esac
+            ;;
+        :) error_exit "Option -${OPTARG} requires an argument" 2 ;;
+        \?) error_exit "Invalid option: -${OPTARG}" 2 ;;
+    esac
+done
+
+shift $((OPTIND - 1))
+
+[[ -z "$file_pattern" ]] && error_exit "File pattern required (use -f or --file)" 2
+[[ $# -gt 0 ]] && error_exit "Unexpected positional arguments (use --commit for commit reference)" 2
+
+# Check dependencies
+command -v git >/dev/null 2>&1 || error_exit "git not found (required dependency)" 1
+
+# Check if we're in a git repository
+git rev-parse --git-dir >/dev/null 2>&1 || error_exit "Not in a git repository" 1
+
+# Verify commit exists
+if ! git rev-parse --verify "${commit_ref}" >/dev/null 2>&1; then
+    if $json_output; then
+        echo '{"valid": false, "message": "Commit not found", "error": "Commit reference does not exist: '"${commit_ref}"'"}'
+        exit 1
+    else
+        error_exit "Commit reference does not exist: ${commit_ref}" 1
+    fi
+fi
+
+# Get changed files using git diff --stat
+# Compare with parent commit (or empty tree if first commit)
+if git rev-parse "${commit_ref}^" >/dev/null 2>&1; then
+    parent="${commit_ref}^"
+else
+    # First commit - compare with empty tree
+    parent=$(git hash-object -t tree /dev/null)
+fi
+
+changed_files=$(git diff --name-only "${parent}" "${commit_ref}")
+
+# Check if file pattern matches any changed files
+matching_files=$(echo "$changed_files" | grep "$file_pattern" || true)
+
+if [[ -n "$matching_files" ]]; then
+    if $json_output; then
+        # Convert newline-separated list to JSON array
+        files_json="["
+        first=true
+        while IFS= read -r file; do
+            [[ -z "$file" ]] && continue
+            if $first; then
+                files_json+="\"$file\""
+                first=false
+            else
+                files_json+=", \"$file\""
+            fi
+        done <<< "$matching_files"
+        files_json+="]"
+
+        echo '{"valid": true, "message": "File(s) changed in commit", "commit": "'"${commit_ref}"'", "files": '"${files_json}"'}'
+    else
+        echo "VALID"
+    fi
+    exit 0
+else
+    if $json_output; then
+        escaped_pattern=$(json_escape "$file_pattern")
+        echo "{\"valid\": false, \"message\": \"File not changed in commit\", \"error\": \"Pattern '${escaped_pattern}' did not match any changed files\", \"commit\": \"${commit_ref}\"}"
+        exit 1
+    else
+        error_exit "File pattern did not match any changed files: ${file_pattern}" 1
+    fi
+fi
