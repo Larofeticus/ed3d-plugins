@@ -21,11 +21,31 @@ error_exit() {
 json_output=false
 header=""
 
-while getopts ":H:jh-:" opt; do
-    case "$opt" in
-        H) header="$OPTARG" ;;
-        j) json_output=true ;;
-        h)
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -H)
+            [[ $# -lt 2 ]] && error_exit "Option -H requires an argument" 2
+            header="$2"
+            shift 2
+            ;;
+        -H*)
+            header="${1#-H}"
+            shift
+            ;;
+        --header=*)
+            header="${1#--header=}"
+            shift
+            ;;
+        --header)
+            [[ $# -lt 2 ]] && error_exit "Option --header requires an argument" 2
+            header="$2"
+            shift 2
+            ;;
+        -j|--json)
+            json_output=true
+            shift
+            ;;
+        -h|--help)
             cat <<EOF
 Usage: validate-markdown-header --header "## Title" [OPTIONS] FILE
 
@@ -34,7 +54,7 @@ Check if a specific markdown header exists in the file.
 OPTIONS:
   -H, --header HEADER   Header to search for (required)
   --json                Output JSON: {"valid": true/false, "message": "...", "error": "..."}
-  -h                    Show this help (note: use -H for header argument)
+  -h, --help            Show this help
 
 EXIT CODES:
   0 - Header found
@@ -47,19 +67,14 @@ EXAMPLES:
 EOF
             exit 0
             ;;
-        -)
-            case "$OPTARG" in
-                header=*) header="${OPTARG#*=}" ;;
-                json) json_output=true ;;
-                *) error_exit "Unknown option --${OPTARG}" 2 ;;
-            esac
+        -*)
+            error_exit "Unknown option: $1" 2
             ;;
-        :) error_exit "Option -${OPTARG} requires an argument" 2 ;;
-        \?) error_exit "Invalid option: -${OPTARG}" 2 ;;
+        *)
+            break
+            ;;
     esac
 done
-
-shift $((OPTIND - 1))
 
 [[ -z "$header" ]] && error_exit "Header required (use -H or --header)" 2
 [[ $# -eq 0 ]] && error_exit "FILE argument required" 2
