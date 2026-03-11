@@ -18,6 +18,14 @@ error_exit() {
     exit "${exit_code}"
 }
 
+json_escape() {
+    local string="$1"
+    # Escape backslashes first, then quotes
+    string="${string//\\/\\\\}"
+    string="${string//\"/\\\"}"
+    echo "$string"
+}
+
 json_output=false
 pattern=""
 commit_ref="HEAD"
@@ -125,7 +133,8 @@ if [[ -n "$matching_lines" ]]; then
     exit 0
 else
     if $json_output; then
-        echo '{"valid": false, "message": "Pattern not found in added content", "error": "Pattern '\'''"${pattern}"'\'' not found in any added lines", "commit": "'"${commit_ref}"'"}'
+        escaped_pattern=$(json_escape "$pattern")
+        echo "{\"valid\": false, \"message\": \"Pattern not found in added content\", \"error\": \"Pattern '${escaped_pattern}' not found in any added lines\", \"commit\": \"${commit_ref}\"}"
         exit 1
     else
         error_exit "Pattern not found in added content: ${pattern}" 1
