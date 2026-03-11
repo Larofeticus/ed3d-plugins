@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# extract-markdown-section: Extract content between markdown headers with grep filters
+#
+# Usage:
+#   extract-markdown-section --section "## Header" [--contains PATTERN] [--exclude PATTERN] [--count] [--json] FILE
+#
+# Exit codes:
+#   0 - success
+#   1 - validation failure (section not found, filter doesn't match)
+#   2 - invalid usage
+
+error_exit() {
+    local message="$1"
+    local exit_code="${2:-1}"
+    echo "ERROR: ${message}" >&2
+    exit "${exit_code}"
+}
+
+json_output=false
+section=""
+contains_pattern=""
+exclude_pattern=""
+count_only=false
+
+while getopts ":s:c:e:jh-:" opt; do
+    case "$opt" in
+        s) section="$OPTARG" ;;
+        c) contains_pattern="$OPTARG" ;;
+        e) exclude_pattern="$OPTARG" ;;
+        j) json_output=true ;;
+        h)
+            cat <<EOF
+Usage: extract-markdown-section --section "## Header" [OPTIONS] FILE
+
+Extract content between markdown headers with optional grep filters.
+
+OPTIONS:
+  -s, --section HEADER    Markdown header to extract (required)
+  -c, --contains PATTERN  Only include lines matching this pattern
+  -e, --exclude PATTERN   Exclude lines matching this pattern
+  --count                 Count matching lines instead of showing content
+  --json                  Output JSON: {"valid": true/false, "message": "...", "content": "..."}
+  -h                      Show this help
+
+EXIT CODES:
+  0 - Section found and filters matched
+  1 - Section not found or filters didn't match
+  2 - Invalid arguments
+
+EXAMPLES:
+  extract-markdown-section -s "## Installation" doc.md
+  extract-markdown-section -s "## Setup" -c "npm install" doc.md
+  extract-markdown-section -s "## Usage" -e "deprecated" --json doc.md
+EOF
+            exit 0
+            ;;
+        -)
+            case "$OPTARG" in
+                section=*) section="${OPTARG#*=}" ;;
+                contains=*) contains_pattern="${OPTARG#*=}" ;;
+                exclude=*) exclude_pattern="${OPTARG#*=}" ;;
+                json) json_output=true ;;
+                count) count_only=true ;;
+                *) error_exit "Unknown option --${OPTARG}" 2 ;;
+            esac
+            ;;
+        :) error_exit "Option -${OPTARG} requires an argument" 2 ;;
+        \?) error_exit "Invalid option: -${OPTARG}" 2 ;;
+    esac
+done
+
+shift $((OPTIND - 1))
+
+[[ -z "$section" ]] && error_exit "Section header required (use -s or --section)" 2
+[[ $# -eq 0 ]] && error_exit "FILE argument required" 2
+[[ $# -gt 1 ]] && error_exit "Too many arguments (expected one FILE)" 2
+
+FILE="$1"
+
+[[ ! -f "$FILE" ]] && error_exit "File not found: ${FILE}" 1
+
+# Check sed is available
+command -v sed >/dev/null 2>&1 || error_exit "sed not found (required dependency)" 1
+command -v grep >/dev/null 2>&1 || error_exit "grep not found (required dependency)" 1
+
+# Extract section between headers using sed
+# Pattern: from $section to next header of same or higher level
+header_level="${section%%[^ #]*}"
+header_level="${#header_level}"
+
+# Extract content between section header and next header of same/higher level
+content=$(sed -E -n "/^${section}/,/^#{1,${header_level}}[^#]/{ /^${section}/d; /^#{1,${header_level}}[^#]/d; p; }" "$FILE")
+
+if [[ -z "$content" ]]; then
+    if $json_output; then
+        echo '{"valid": false, "message": "Section not found", "error": "'"${section}"' does not exist in '"${FILE}"'"}'
+        exit 1
+    else
+        error_exit "Section not found: ${section}" 1
+    fi
+fi
+
+# Apply filters if specified
+if [[ -n "$contains_pattern" ]]; then
+    filtered=$(echo "$content" | grep "$contains_pattern" || true)
+    if [[ -z "$filtered" ]]; then
+        if $json_output; then
+            echo '{"valid": false, "message": "Pattern not found", "error": "No lines match contains pattern: '"${contains_pattern}"'"}'
+            exit 1
+        else
+            error_exit "No lines match contains pattern: ${contains_pattern}" 1
+        fi
+    fi
+    content="$filtered"
+fi
+
+if [[ -n "$exclude_pattern" ]]; then
+    content=$(echo "$content" | grep -v "$exclude_pattern" || true)
+fi
+
+# Output results
+if $count_only; then
+    line_count=$(echo "$content" | wc -l)
+    if $json_output; then
+        echo '{"valid": true, "message": "Section found", "count": '"${line_count}"'}'
+    else
+        echo "$line_count"
+    fi
+else
+    if $json_output; then
+        # Escape content for JSON (basic escaping - replace quotes and newlines)
+        escaped_content=$(echo "$content" | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')
+        echo '{"valid": true, "message": "Section extracted", "content": "'"${escaped_content}"'"}'
+    else
+        echo "$content"
+    fi
+fi
+
+exit 0
