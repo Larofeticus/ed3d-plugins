@@ -87,8 +87,9 @@ FILE="$1"
 # Check dependencies
 command -v grep >/dev/null 2>&1 || error_exit "grep not found (required dependency)" 1
 
-# Search for header (grep -q exits with 0 if found, 1 if not found)
-if grep -q "^${header}$" "$FILE"; then
+# Search for header using fixed string match (grep -F) with exact line match (-x)
+# This prevents regex interpretation of special characters in the header
+if grep -Fxq "${header}" "$FILE"; then
     if $json_output; then
         echo '{"valid": true, "message": "Header found"}'
     else
