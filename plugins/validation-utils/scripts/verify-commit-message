@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# verify-commit-message: Check if commit message matches pattern
+#
+# Usage:
+#   verify-commit-message --pattern "PATTERN" [--commit REF] [--json]
+#
+# Exit codes:
+#   0 - pattern matches commit message
+#   1 - pattern doesn't match, commit not found, or not in git repository
+#   2 - invalid usage
+
+error_exit() {
+    local message="$1"
+    local exit_code="${2:-1}"
+    echo "ERROR: ${message}" >&2
+    exit "${exit_code}"
+}
+
+json_output=false
+pattern=""
+commit_ref="HEAD"
+
+while getopts ":p:c:jh-:" opt; do
+    case "$opt" in
+        p) pattern="$OPTARG" ;;
+        c) commit_ref="$OPTARG" ;;
+        j) json_output=true ;;
+        h)
+            cat <<EOF
+Usage: verify-commit-message --pattern "PATTERN" [OPTIONS]
+
+Check if a commit message matches a pattern using grep regex.
+
+OPTIONS:
+  -p, --pattern PATTERN  Grep pattern to match (required, can be regex)
+  -c, --commit REF       Commit reference (default: HEAD)
+  --json                 Output JSON: {"valid": true/false, "message": "...", "error": "..."}
+  -h                     Show this help
+
+EXIT CODES:
+  0 - Pattern matches commit message
+  1 - Pattern doesn't match, commit not found, or not in git repository
+  2 - Invalid arguments
+
+EXAMPLES:
+  verify-commit-message -p "feat:" -c HEAD
+  verify-commit-message --pattern "^fix\|^feat" --commit HEAD~1
+  verify-commit-message -p "validation-utils" --json
+EOF
+            exit 0
+            ;;
+        -)
+            case "$OPTARG" in
+                pattern=*) pattern="${OPTARG#*=}" ;;
+                commit=*) commit_ref="${OPTARG#*=}" ;;
+                json) json_output=true ;;
+                *) error_exit "Unknown option --${OPTARG}" 2 ;;
+            esac
+            ;;
+        :) error_exit "Option -${OPTARG} requires an argument" 2 ;;
+        \?) error_exit "Invalid option: -${OPTARG}" 2 ;;
+    esac
+done
+
+shift $((OPTIND - 1))
+
+[[ -z "$pattern" ]] && error_exit "Pattern required (use -p or --pattern)" 2
+[[ $# -gt 0 ]] && error_exit "Unexpected positional arguments (use --commit for commit reference)" 2
+
+# Check dependencies
+command -v git >/dev/null 2>&1 || error_exit "git not found (required dependency)" 1
+
+# Check if we're in a git repository
+git rev-parse --git-dir >/dev/null 2>&1 || error_exit "Not in a git repository" 1
+
+# Verify commit exists
+if ! git rev-parse --verify "${commit_ref}" >/dev/null 2>&1; then
+    if $json_output; then
+        echo '{"valid": false, "message": "Commit not found", "error": "Commit reference does not exist: '"${commit_ref}"'"}'
+        exit 1
+    else
+        error_exit "Commit reference does not exist: ${commit_ref}" 1
+    fi
+fi
+
+# Get commit message (subject + body)
+commit_message=$(git log --format="%s%n%b" -n 1 "${commit_ref}")
+
+# Check if pattern matches
+if echo "$commit_message" | grep -q "$pattern"; then
+    if $json_output; then
+        # Get just the subject line for display
+        subject=$(git log --format="%s" -n 1 "${commit_ref}")
+        echo '{"valid": true, "message": "Pattern matches commit message", "commit": "'"${commit_ref}"'", "subject": "'"${subject}"'"}'
+    else
+        echo "VALID"
+    fi
+    exit 0
+else
+    if $json_output; then
+        subject=$(git log --format="%s" -n 1 "${commit_ref}")
+        echo '{"valid": false, "message": "Pattern does not match commit message", "error": "Pattern '\'''"${pattern}"'\'' not found in commit message", "commit": "'"${commit_ref}"'", "subject": "'"${subject}"'"}'
+        exit 1
+    else
+        error_exit "Pattern does not match commit message: ${pattern}" 1
+    fi
+fi
