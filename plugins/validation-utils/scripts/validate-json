@@ -71,14 +71,13 @@ FILE="$1"
 
 # Check dependencies
 command -v python3 >/dev/null 2>&1 || error_exit "python3 not found (required dependency)" 1
+command -v jq >/dev/null 2>&1 || error_exit "jq not found (required for --json output)" 1
 
 # Validate JSON syntax using python3 json.tool
 if ! python3 -m json.tool "$FILE" > /dev/null 2>&1; then
     syntax_error=$(python3 -m json.tool "$FILE" 2>&1 || true)
     if $json_output; then
-        # Escape error message for JSON
-        escaped_error=$(echo "$syntax_error" | sed 's/"/\\"/g' | tr '\n' ' ')
-        echo '{"valid": false, "message": "Invalid JSON syntax", "error": "'"${escaped_error}"'"}'
+        jq -n --arg error "$syntax_error" '{"valid": false, "message": "Invalid JSON syntax", "error": $error}'
         exit 1
     else
         error_exit "Invalid JSON syntax: ${syntax_error}" 1
@@ -92,7 +91,7 @@ if [[ -n "$field_path" ]]; then
     # Use jq -e to check if field exists (exits 1 if field missing or null/false)
     if ! jq -e "${field_path}" "$FILE" > /dev/null 2>&1; then
         if $json_output; then
-            echo '{"valid": false, "message": "Field not found", "error": "Field path does not exist or is null: '"${field_path}"'"}'
+            jq -n --arg field_path "$field_path" '{"valid": false, "message": "Field not found", "error": ("Field path does not exist or is null: " + $field_path)}'
             exit 1
         else
             error_exit "Field path does not exist or is null: ${field_path}" 1

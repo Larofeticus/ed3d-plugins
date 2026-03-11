@@ -102,7 +102,7 @@ content=$(echo "$content" | sed -e '/./,$!d' -e ':a' -e '/^\n*$/{$d;N;ba' -e '}'
 
 if [[ -z "$content" ]]; then
     if $json_output; then
-        echo '{"valid": false, "message": "Section not found", "error": "'"${section}"' does not exist in '"${FILE}"'"}'
+        jq -n --arg section "$section" --arg file "$FILE" '{"valid": false, "message": "Section not found", "error": ($section + " does not exist in " + $file)}'
         exit 1
     else
         error_exit "Section not found: ${section}" 1
@@ -114,7 +114,7 @@ if [[ -n "$contains_pattern" ]]; then
     filtered=$(echo "$content" | grep "$contains_pattern" || true)
     if [[ -z "$filtered" ]]; then
         if $json_output; then
-            echo '{"valid": false, "message": "Pattern not found", "error": "No lines match contains pattern: '"${contains_pattern}"'"}'
+            jq -n --arg pattern "$contains_pattern" '{"valid": false, "message": "Pattern not found", "error": ("No lines match contains pattern: " + $pattern)}'
             exit 1
         else
             error_exit "No lines match contains pattern: ${contains_pattern}" 1

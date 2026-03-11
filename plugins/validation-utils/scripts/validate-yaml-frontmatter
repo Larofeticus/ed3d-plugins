@@ -72,6 +72,7 @@ FILE="$1"
 # Check dependencies
 command -v head >/dev/null 2>&1 || error_exit "head not found (required dependency)" 1
 command -v grep >/dev/null 2>&1 || error_exit "grep not found (required dependency)" 1
+command -v jq >/dev/null 2>&1 || error_exit "jq not found (required for --json output)" 1
 
 # Check for opening delimiter on line 1
 first_line=$(head -n 1 "$FILE")
@@ -103,7 +104,7 @@ frontmatter=$(sed -n '2,'"$((closing_line - 1))"'p' "$FILE")
 for field in "${required_fields[@]}"; do
     if ! echo "$frontmatter" | grep -q "^${field}:"; then
         if $json_output; then
-            echo '{"valid": false, "message": "Missing required field", "error": "Required field not found: '"${field}"'"}'
+            jq -n --arg field "$field" '{"valid": false, "message": "Missing required field", "error": ("Required field not found: " + $field)}'
             exit 1
         else
             error_exit "Required field not found: ${field}" 1

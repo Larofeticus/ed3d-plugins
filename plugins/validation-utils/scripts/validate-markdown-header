@@ -86,6 +86,7 @@ FILE="$1"
 
 # Check dependencies
 command -v grep >/dev/null 2>&1 || error_exit "grep not found (required dependency)" 1
+command -v jq >/dev/null 2>&1 || error_exit "jq not found (required for --json output)" 1
 
 # Search for header using fixed string match (grep -F) with exact line match (-x)
 # This prevents regex interpretation of special characters in the header
@@ -98,7 +99,7 @@ if grep -Fxq "${header}" "$FILE"; then
     exit 0
 else
     if $json_output; then
-        echo '{"valid": false, "message": "Header not found", "error": "'"${header}"' does not exist in '"${FILE}"'"}'
+        jq -n --arg header "$header" --arg file "$FILE" '{"valid": false, "message": "Header not found", "error": ($header + " does not exist in " + $file)}'
         exit 1
     else
         error_exit "Header not found: ${header}" 1
