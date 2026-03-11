@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# validate-json: Validate JSON syntax and optional field constraints
+#
+# Usage:
+#   validate-json [--field PATH] [--json] FILE
+#
+# Exit codes:
+#   0 - valid JSON
+#   1 - invalid JSON or field constraint failed
+#   2 - invalid usage
+
+error_exit() {
+    local message="$1"
+    local exit_code="${2:-1}"
+    echo "ERROR: ${message}" >&2
+    exit "${exit_code}"
+}
+
+json_output=false
+field_path=""
+
+while getopts ":f:jh-:" opt; do
+    case "$opt" in
+        f) field_path="$OPTARG" ;;
+        j) json_output=true ;;
+        h)
+            cat <<EOF
+Usage: validate-json [OPTIONS] FILE
+
+Validate JSON syntax and optional field constraints.
+
+OPTIONS:
+  -f, --field PATH      Validate field exists using jq path (e.g., ".name", ".author.email")
+  --json                Output JSON: {"valid": true/false, "message": "...", "error": "..."}
+  -h                    Show this help
+
+EXIT CODES:
+  0 - Valid JSON with all field constraints met
+  1 - Invalid JSON or field constraint failed
+  2 - Invalid arguments
+
+EXAMPLES:
+  validate-json config.json
+  validate-json --field ".version" package.json
+  validate-json --field ".author.email" --json plugin.json
+EOF
+            exit 0
+            ;;
+        -)
+            case "$OPTARG" in
+                field=*) field_path="${OPTARG#*=}" ;;
+                json) json_output=true ;;
+                *) error_exit "Unknown option --${OPTARG}" 2 ;;
+            esac
+            ;;
+        :) error_exit "Option -${OPTARG} requires an argument" 2 ;;
+        \?) error_exit "Invalid option: -${OPTARG}" 2 ;;
+    esac
+done
+
+shift $((OPTIND - 1))
+
+[[ $# -eq 0 ]] && error_exit "FILE argument required" 2
+[[ $# -gt 1 ]] && error_exit "Too many arguments (expected one FILE)" 2
+
+FILE="$1"
+
+[[ ! -f "$FILE" ]] && error_exit "File not found: ${FILE}" 1
+
+# Check dependencies
+command -v python3 >/dev/null 2>&1 || error_exit "python3 not found (required dependency)" 1
+
+# Validate JSON syntax using python3 json.tool
+if ! python3 -m json.tool "$FILE" > /dev/null 2>&1; then
+    syntax_error=$(python3 -m json.tool "$FILE" 2>&1 || true)
+    if $json_output; then
+        # Escape error message for JSON
+        escaped_error=$(echo "$syntax_error" | sed 's/"/\\"/g' | tr '\n' ' ')
+        echo '{"valid": false, "message": "Invalid JSON syntax", "error": "'"${escaped_error}"'"}'
+        exit 1
+    else
+        error_exit "Invalid JSON syntax: ${syntax_error}" 1
+    fi
+fi
+
+# Validate field constraint if specified
+if [[ -n "$field_path" ]]; then
+    command -v jq >/dev/null 2>&1 || error_exit "jq not found (required for --field)" 1
+
+    # Use jq -e to check if field exists (exits 1 if field missing or null/false)
+    if ! jq -e "${field_path}" "$FILE" > /dev/null 2>&1; then
+        if $json_output; then
+            echo '{"valid": false, "message": "Field not found", "error": "Field path does not exist or is null: '"${field_path}"'"}'
+            exit 1
+        else
+            error_exit "Field path does not exist or is null: ${field_path}" 1
+        fi
+    fi
+fi
+
+# Success
+if $json_output; then
+    echo '{"valid": true, "message": "Valid JSON"}'
+else
+    echo "VALID"
+fi
+
+exit 0
