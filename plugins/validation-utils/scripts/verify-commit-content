@@ -87,7 +87,8 @@ git rev-parse --git-dir >/dev/null 2>&1 || error_exit "Not in a git repository" 
 # Verify commit exists
 if ! git rev-parse --verify "${commit_ref}" >/dev/null 2>&1; then
     if $json_output; then
-        echo '{"valid": false, "message": "Commit not found", "error": "Commit reference does not exist: '"${commit_ref}"'"}'
+        escaped_ref=$(json_escape "${commit_ref}")
+        echo "{\"valid\": false, \"message\": \"Commit not found\", \"error\": \"Commit reference does not exist: ${escaped_ref}\"}"
         exit 1
     else
         error_exit "Commit reference does not exist: ${commit_ref}" 1
@@ -125,8 +126,9 @@ if [[ -n "$matching_lines" ]]; then
         done <<< "$matching_lines"
         matches_json+="]"
 
+        escaped_ref=$(json_escape "${commit_ref}")
         total_matches=$(echo "$matching_lines" | wc -l)
-        echo '{"valid": true, "message": "Pattern found in added content", "commit": "'"${commit_ref}"'", "match_count": '"${total_matches}"', "matches": '"${matches_json}"'}'
+        echo "{\"valid\": true, \"message\": \"Pattern found in added content\", \"commit\": \"${escaped_ref}\", \"match_count\": ${total_matches}, \"matches\": ${matches_json}}"
     else
         echo "VALID"
     fi
@@ -134,7 +136,8 @@ if [[ -n "$matching_lines" ]]; then
 else
     if $json_output; then
         escaped_pattern=$(json_escape "$pattern")
-        echo "{\"valid\": false, \"message\": \"Pattern not found in added content\", \"error\": \"Pattern '${escaped_pattern}' not found in any added lines\", \"commit\": \"${commit_ref}\"}"
+        escaped_ref=$(json_escape "${commit_ref}")
+        echo "{\"valid\": false, \"message\": \"Pattern not found in added content\", \"error\": \"Pattern '${escaped_pattern}' not found in any added lines\", \"commit\": \"${escaped_ref}\"}"
         exit 1
     else
         error_exit "Pattern not found in added content: ${pattern}" 1

@@ -86,7 +86,8 @@ git rev-parse --git-dir >/dev/null 2>&1 || error_exit "Not in a git repository" 
 # Verify commit exists
 if ! git rev-parse --verify "${commit_ref}" >/dev/null 2>&1; then
     if $json_output; then
-        echo '{"valid": false, "message": "Commit not found", "error": "Commit reference does not exist: '"${commit_ref}"'"}'
+        escaped_ref=$(json_escape "${commit_ref}")
+        echo "{\"valid\": false, \"message\": \"Commit not found\", \"error\": \"Commit reference does not exist: ${escaped_ref}\"}"
         exit 1
     else
         error_exit "Commit reference does not exist: ${commit_ref}" 1
@@ -114,16 +115,18 @@ if [[ -n "$matching_files" ]]; then
         first=true
         while IFS= read -r file; do
             [[ -z "$file" ]] && continue
+            escaped_file=$(json_escape "$file")
             if $first; then
-                files_json+="\"$file\""
+                files_json+="\"${escaped_file}\""
                 first=false
             else
-                files_json+=", \"$file\""
+                files_json+=", \"${escaped_file}\""
             fi
         done <<< "$matching_files"
         files_json+="]"
 
-        echo '{"valid": true, "message": "File(s) changed in commit", "commit": "'"${commit_ref}"'", "files": '"${files_json}"'}'
+        escaped_ref=$(json_escape "${commit_ref}")
+        echo "{\"valid\": true, \"message\": \"File(s) changed in commit\", \"commit\": \"${escaped_ref}\", \"files\": ${files_json}}"
     else
         echo "VALID"
     fi
