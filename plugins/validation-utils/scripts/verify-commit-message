@@ -18,6 +18,14 @@ error_exit() {
     exit "${exit_code}"
 }
 
+json_escape() {
+    local string="$1"
+    # Escape backslashes first, then quotes
+    string="${string//\\/\\\\}"
+    string="${string//\"/\\\"}"
+    echo "$string"
+}
+
 json_output=false
 pattern=""
 commit_ref="HEAD"
@@ -34,8 +42,8 @@ Usage: verify-commit-message --pattern "PATTERN" [OPTIONS]
 Check if a commit message matches a pattern using grep regex.
 
 OPTIONS:
-  -p, --pattern PATTERN  Grep pattern to match (required, can be regex)
-  -c, --commit REF       Commit reference (default: HEAD)
+  -p, --pattern=PATTERN  Grep pattern to match (required, can be regex)
+  -c, --commit=REF       Commit reference (default: HEAD)
   --json                 Output JSON: {"valid": true/false, "message": "...", "error": "..."}
   -h                     Show this help
 
@@ -78,7 +86,8 @@ git rev-parse --git-dir >/dev/null 2>&1 || error_exit "Not in a git repository" 
 # Verify commit exists
 if ! git rev-parse --verify "${commit_ref}" >/dev/null 2>&1; then
     if $json_output; then
-        echo '{"valid": false, "message": "Commit not found", "error": "Commit reference does not exist: '"${commit_ref}"'"}'
+        escaped_ref=$(json_escape "${commit_ref}")
+        echo "{\"valid\": false, \"message\": \"Commit not found\", \"error\": \"Commit reference does not exist: ${escaped_ref}\"}"
         exit 1
     else
         error_exit "Commit reference does not exist: ${commit_ref}" 1
@@ -93,7 +102,9 @@ if echo "$commit_message" | grep -q "$pattern"; then
     if $json_output; then
         # Get just the subject line for display
         subject=$(git log --format="%s" -n 1 "${commit_ref}")
-        echo '{"valid": true, "message": "Pattern matches commit message", "commit": "'"${commit_ref}"'", "subject": "'"${subject}"'"}'
+        escaped_subject=$(json_escape "$subject")
+        escaped_ref=$(json_escape "${commit_ref}")
+        echo "{\"valid\": true, \"message\": \"Pattern matches commit message\", \"commit\": \"${escaped_ref}\", \"subject\": \"${escaped_subject}\"}"
     else
         echo "VALID"
     fi
@@ -101,7 +112,10 @@ if echo "$commit_message" | grep -q "$pattern"; then
 else
     if $json_output; then
         subject=$(git log --format="%s" -n 1 "${commit_ref}")
-        echo '{"valid": false, "message": "Pattern does not match commit message", "error": "Pattern '\'''"${pattern}"'\'' not found in commit message", "commit": "'"${commit_ref}"'", "subject": "'"${subject}"'"}'
+        escaped_pattern=$(json_escape "$pattern")
+        escaped_subject=$(json_escape "$subject")
+        escaped_ref=$(json_escape "${commit_ref}")
+        echo "{\"valid\": false, \"message\": \"Pattern does not match commit message\", \"error\": \"Pattern '${escaped_pattern}' not found in commit message\", \"commit\": \"${escaped_ref}\", \"subject\": \"${escaped_subject}\"}"
         exit 1
     else
         error_exit "Pattern does not match commit message: ${pattern}" 1

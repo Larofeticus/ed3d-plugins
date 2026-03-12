@@ -42,8 +42,8 @@ Usage: verify-commit-content --pattern "PATTERN" [OPTIONS]
 Verify that specific content was added in a commit by checking lines with '+' prefix.
 
 OPTIONS:
-  -p, --pattern PATTERN  Grep pattern to find in added lines (required)
-  -c, --commit REF       Commit reference (default: HEAD)
+  -p, --pattern=PATTERN  Grep pattern to find in added lines (required)
+  -c, --commit=REF       Commit reference (default: HEAD)
   --json                 Output JSON: {"valid": true/false, "message": "...", "matches": [...]}
   -h                     Show this help
 

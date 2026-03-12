@@ -42,8 +42,8 @@ Usage: verify-commit-files --file "PATH" [OPTIONS]
 Check if a specific file was changed in a commit using git diff --stat.
 
 OPTIONS:
-  -f, --file PATH        File path pattern to check (required, can be glob)
-  -c, --commit REF       Commit reference (default: HEAD)
+  -f, --file=PATH        File path pattern to check (required, can be glob)
+  -c, --commit=REF       Commit reference (default: HEAD)
   --json                 Output JSON: {"valid": true/false, "message": "...", "files": [...]}
   -h                     Show this help
 
