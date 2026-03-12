@@ -13,6 +13,24 @@ Initial release of validation-utils plugin - reusable bash scripts for file and 
 - Robust error handling with set -euo pipefail and getopts argument parsing
 - Expected 35-45% reduction in complex bash generation for validation tasks
 
+## ed3d-house-style 1.2.0
+
+Add comprehensive Java house style skill.
+
+**New:**
+- `howto-code-in-java` skill: comprehensive Java coding standards targeting Java 17 (LTS)
+  - Naming, Javadoc, code style, immutability (records, final fields, immutable collections)
+  - Modern Java features: records, sealed classes, pattern matching instanceof, text blocks, switch expressions, var
+  - Optional, Streams, exception handling, generics, enums, collections
+  - Sharp edges: `==` vs `.equals()`, Integer caching, BigDecimal for money, NPE, integer overflow
+  - Quick Self-Check, Common Mistakes table, Red Flags section
+
+**Changed:**
+- `coding-effectively`: added `howto-code-in-java` to conditional sub-skills list
+- `code-reviewer` agent: added Java to language-specific review guidance
+- `task-implementor-fast` agent: added `howto-code-in-java` to language skill examples
+- `task-bug-fixer` agent: added `howto-code-in-java` to language skill examples
+
 ## ed3d-extending-claude 1.0.4
 
 Add model-level testing guidance to testing-skills-with-subagents.

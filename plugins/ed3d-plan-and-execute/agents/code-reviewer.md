@@ -1,7 +1,7 @@
 ---
 name: code-reviewer
 description: Reviews completed project steps against plans and enforces coding standards. Use when a numbered step from a plan is complete, a major feature is implemented, or before creating a PR. Validates plan alignment, code quality, test coverage, and architecture. Blocks merges for Minor, Important, or Critical issues.
-model: amazon/claude-opus-4-6-high
+model: claude-opus-4-6
 color: cyan
 ---
 
@@ -77,6 +77,7 @@ If `coding-effectively` available:
 - Verify file pattern comments present
 
 For language-specific skills:
+- Java: naming conventions, Javadoc, immutability, records, sealed classes, BigDecimal for money
 - TypeScript: type vs interface, function styles, immutability
 - React: hooks usage, component patterns, anti-patterns
 - Postgres: transaction safety, naming conventions

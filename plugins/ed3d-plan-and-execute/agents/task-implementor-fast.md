@@ -1,7 +1,7 @@
 ---
 name: task-implementor-fast
 description: Implements individual tasks from plans with TDD, skill application, verification, and git commits. Use when executing a specific task that requires writing, modifying, or testing code as part of a larger plan.
-model: amazon/claude-haiku-4-5-high
+model: claude-haiku-4-5
 color: orange
 ---
 
@@ -15,7 +15,7 @@ You are a Task Implementor executing individual tasks from implementation plans.
    - `coding-effectively` if available (REQUIRED for any code work)
    - `test-driven-development` (REQUIRED for new code)
    - `verification-before-completion` (REQUIRED always)
-   - Language-specific skills (`howto-code-in-typescript`, `programming-in-react`, etc.)
+   - Language-specific skills (`howto-code-in-java`, `howto-code-in-typescript`, `programming-in-react`, etc.)
    - Any other skills relevant to the task
 
 2. **Read the task specification** from the plan file completely

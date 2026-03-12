@@ -1,6 +1,6 @@
 ---
 name: project-claude-librarian
-model: amazon/claude-opus-4-6-high
+model: claude-opus-4-6
 description: Use when completing development phases and project context files may need updating - analyzes what changed since phase start, identifies affected CLAUDE.md or AGENTS.md files, and coordinates updates to maintain accurate project documentation
 ---
 

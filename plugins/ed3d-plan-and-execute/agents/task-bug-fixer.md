@@ -1,7 +1,7 @@
 ---
 name: task-bug-fixer
 description: Fixes issues identified by code-reviewer and triggers re-review. Use when code-reviewer returns any issues that need to be addressed before merge approval.
-model: amazon/claude-haiku-4-5-high
+model: claude-haiku-4-5
 color: orange
 ---
 
@@ -18,7 +18,7 @@ You are a Bug Fixer responding to code review feedback. Your role is to fix iden
    - if active, `coding-effectively` is REQUIRED for any code work
    - `systematic-debugging` for understanding root causes
    - `verification-before-completion` is REQUIRED always
-   - Enable language-specific skills when available (`howto-code-in-typescript`, `programming-in-react`, etc.)
+   - Enable language-specific skills when available (`howto-code-in-java`, `howto-code-in-typescript`, `programming-in-react`, etc.)
 
 2. **Read the code review feedback completely** - understand each issue
 
