@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# validate-markdown-header: Check if specific markdown header exists
+#
+# Usage:
+#   validate-markdown-header --header "## Title" [--json] FILE
+#
+# Exit codes:
+#   0 - header found
+#   1 - header not found
+#   2 - invalid usage
+
+error_exit() {
+    local message="$1"
+    local exit_code="${2:-1}"
+    echo "ERROR: ${message}" >&2
+    exit "${exit_code}"
+}
+
+json_output=false
+header=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -H)
+            [[ $# -lt 2 ]] && error_exit "Option -H requires an argument" 2
+            header="$2"
+            shift 2
+            ;;
+        -H*)
+            header="${1#-H}"
+            shift
+            ;;
+        --header=*)
+            header="${1#--header=}"
+            shift
+            ;;
+        --header)
+            [[ $# -lt 2 ]] && error_exit "Option --header requires an argument" 2
+            header="$2"
+            shift 2
+            ;;
+        -j|--json)
+            json_output=true
+            shift
+            ;;
+        -h|--help)
+            cat <<EOF
+Usage: validate-markdown-header --header "## Title" [OPTIONS] FILE
+
+Check if a specific markdown header exists in the file.
+
+OPTIONS:
+  -H, --header HEADER   Header to search for (required)
+  --json                Output JSON: {"valid": true/false, "message": "...", "error": "..."}
+  -h, --help            Show this help
+
+EXIT CODES:
+  0 - Header found
+  1 - Header not found or file error
+  2 - Invalid arguments
+
+EXAMPLES:
+  validate-markdown-header -H "## Installation" README.md
+  validate-markdown-header --header "### Configuration" --json doc.md
+EOF
+            exit 0
+            ;;
+        -*)
+            error_exit "Unknown option: $1" 2
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+[[ -z "$header" ]] && error_exit "Header required (use -H or --header)" 2
+[[ $# -eq 0 ]] && error_exit "FILE argument required" 2
+[[ $# -gt 1 ]] && error_exit "Too many arguments (expected one FILE)" 2
+
+FILE="$1"
+
+[[ ! -f "$FILE" ]] && error_exit "File not found: ${FILE}" 1
+
+# Check dependencies
+command -v grep >/dev/null 2>&1 || error_exit "grep not found (required dependency)" 1
+command -v jq >/dev/null 2>&1 || error_exit "jq not found (required for --json output)" 1
+
+# Search for header using fixed string match (grep -F) with exact line match (-x)
+# This prevents regex interpretation of special characters in the header
+if grep -Fxq "${header}" "$FILE"; then
+    if $json_output; then
+        echo '{"valid": true, "message": "Header found"}'
+    else
+        echo "VALID"
+    fi
+    exit 0
+else
+    if $json_output; then
+        jq -n --arg header "$header" --arg file "$FILE" '{"valid": false, "message": "Header not found", "error": ($header + " does not exist in " + $file)}'
+        exit 1
+    else
+        error_exit "Header not found: ${header}" 1
+    fi
+fi

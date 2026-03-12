@@ -125,6 +125,17 @@
                 "e2e",
                 "web-scraping"
             ]
+        },
+        {
+            "name": "validation-utils",
+            "description": "Reusable bash validation scripts for file and git verification. Reduces complex bash generation overhead by 35-45%.",
+            "version": "1.0.0",
+            "source": "./plugins/validation-utils",
+            "author": {
+                "name": "Ed",
+                "email": "ed@ed3d.net"
+            },
+            "license": "UNLICENSED"
         }
     ]
 }

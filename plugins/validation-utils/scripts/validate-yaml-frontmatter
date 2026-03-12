@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# validate-yaml-frontmatter: Verify YAML frontmatter structure and required fields
+#
+# Usage:
+#   validate-yaml-frontmatter [--require FIELD] [--json] FILE
+#
+# Exit codes:
+#   0 - valid frontmatter
+#   1 - invalid frontmatter (missing delimiters, required fields)
+#   2 - invalid usage
+
+error_exit() {
+    local message="$1"
+    local exit_code="${2:-1}"
+    echo "ERROR: ${message}" >&2
+    exit "${exit_code}"
+}
+
+json_output=false
+required_fields=()
+
+while getopts ":r:jh-:" opt; do
+    case "$opt" in
+        r) required_fields+=("$OPTARG") ;;
+        j) json_output=true ;;
+        h)
+            cat <<EOF
+Usage: validate-yaml-frontmatter [OPTIONS] FILE
+
+Verify YAML frontmatter structure (--- delimiters on lines 1 and ≤20).
+
+OPTIONS:
+  -r, --require FIELD   Required field in frontmatter (can be used multiple times)
+  --json                Output JSON: {"valid": true/false, "message": "...", "error": "..."}
+  -h                    Show this help
+
+EXIT CODES:
+  0 - Valid frontmatter with all required fields
+  1 - Invalid frontmatter or missing required fields
+  2 - Invalid arguments
+
+EXAMPLES:
+  validate-yaml-frontmatter skill.md
+  validate-yaml-frontmatter -r name -r description skill.md
+  validate-yaml-frontmatter -r name -r user-invocable --json skill.md
+EOF
+            exit 0
+            ;;
+        -)
+            case "$OPTARG" in
+                require=*) required_fields+=("${OPTARG#*=}") ;;
+                json) json_output=true ;;
+                *) error_exit "Unknown option --${OPTARG}" 2 ;;
+            esac
+            ;;
+        :) error_exit "Option -${OPTARG} requires an argument" 2 ;;
+        \?) error_exit "Invalid option: -${OPTARG}" 2 ;;
+    esac
+done
+
+shift $((OPTIND - 1))
+
+[[ $# -eq 0 ]] && error_exit "FILE argument required" 2
+[[ $# -gt 1 ]] && error_exit "Too many arguments (expected one FILE)" 2
+
+FILE="$1"
+
+[[ ! -f "$FILE" ]] && error_exit "File not found: ${FILE}" 1
+
+# Check dependencies
+command -v head >/dev/null 2>&1 || error_exit "head not found (required dependency)" 1
+command -v grep >/dev/null 2>&1 || error_exit "grep not found (required dependency)" 1
+command -v jq >/dev/null 2>&1 || error_exit "jq not found (required for --json output)" 1
+
+# Check for opening delimiter on line 1
+first_line=$(head -n 1 "$FILE")
+if [[ "$first_line" != "---" ]]; then
+    if $json_output; then
+        echo '{"valid": false, "message": "Missing frontmatter", "error": "First line must be ---"}'
+        exit 1
+    else
+        error_exit "Missing opening delimiter: first line must be ---" 1
+    fi
+fi
+
+# Check for closing delimiter within first 20 lines
+closing_line=$(head -n 20 "$FILE" | grep -n "^---$" | tail -n 1 | cut -d: -f1)
+
+if [[ -z "$closing_line" ]] || [[ "$closing_line" -eq 1 ]]; then
+    if $json_output; then
+        echo '{"valid": false, "message": "Missing closing delimiter", "error": "Second --- must appear within first 20 lines"}'
+        exit 1
+    else
+        error_exit "Missing closing delimiter: second --- must appear within first 20 lines" 1
+    fi
+fi
+
+# Extract frontmatter content (between delimiters)
+frontmatter=$(sed -n '2,'"$((closing_line - 1))"'p' "$FILE")
+
+# Validate required fields if specified
+for field in "${required_fields[@]}"; do
+    if ! echo "$frontmatter" | grep -q "^${field}:"; then
+        if $json_output; then
+            jq -n --arg field "$field" '{"valid": false, "message": "Missing required field", "error": ("Required field not found: " + $field)}'
+            exit 1
+        else
+            error_exit "Required field not found: ${field}" 1
+        fi
+    fi
+done
+
+# Success
+if $json_output; then
+    echo '{"valid": true, "message": "Valid YAML frontmatter"}'
+else
+    echo "VALID"
+fi
+
+exit 0

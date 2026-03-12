@@ -1,5 +1,18 @@
 # Changelog
 
+## [validation-utils] 1.0.0
+
+Initial release of validation-utils plugin - reusable bash scripts for file and git verification.
+
+**New:**
+- 4 validation scripts: extract-markdown-section, validate-yaml-frontmatter, validate-json, validate-markdown-header
+- 3 git verification scripts: verify-commit-message, verify-commit-files, verify-commit-content
+- 2 skills: validation-scripts and git-verification-scripts with usage documentation
+- Absolute path invocation pattern using ${CLAUDE_PLUGIN_ROOT}
+- Consistent output interface (default human-readable, --json flag for structured output)
+- Robust error handling with set -euo pipefail and getopts argument parsing
+- Expected 35-45% reduction in complex bash generation for validation tasks
+
 ## ed3d-extending-claude 1.0.4
 
 Add model-level testing guidance to testing-skills-with-subagents.

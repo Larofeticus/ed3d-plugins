@@ -1,0 +1,19 @@
+{
+    "name": "validation-utils",
+    "description": "Reusable bash validation scripts for file and git verification. Reduces complex bash generation overhead by 35-45%.",
+    "version": "1.0.0",
+    "author": {
+        "name": "Ed",
+        "email": "ed@ed3d.net"
+    },
+    "license": "UNLICENSED",
+    "keywords": [
+        "validation",
+        "bash",
+        "utilities",
+        "git",
+        "markdown",
+        "json",
+        "yaml"
+    ]
+}

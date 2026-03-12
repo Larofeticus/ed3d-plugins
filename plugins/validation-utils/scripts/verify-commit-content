@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# verify-commit-content: Verify specific content was added in a commit
+#
+# Usage:
+#   verify-commit-content --pattern "PATTERN" [--commit REF] [--json]
+#
+# Exit codes:
+#   0 - pattern found in added content
+#   1 - pattern not found, commit not found, or not in git repository
+#   2 - invalid usage
+
+error_exit() {
+    local message="$1"
+    local exit_code="${2:-1}"
+    echo "ERROR: ${message}" >&2
+    exit "${exit_code}"
+}
+
+json_escape() {
+    local string="$1"
+    # Escape backslashes first, then quotes
+    string="${string//\\/\\\\}"
+    string="${string//\"/\\\"}"
+    echo "$string"
+}
+
+json_output=false
+pattern=""
+commit_ref="HEAD"
+
+while getopts ":p:c:jh-:" opt; do
+    case "$opt" in
+        p) pattern="$OPTARG" ;;
+        c) commit_ref="$OPTARG" ;;
+        j) json_output=true ;;
+        h)
+            cat <<EOF
+Usage: verify-commit-content --pattern "PATTERN" [OPTIONS]
+
+Verify that specific content was added in a commit by checking lines with '+' prefix.
+
+OPTIONS:
+  -p, --pattern=PATTERN  Grep pattern to find in added lines (required)
+  -c, --commit=REF       Commit reference (default: HEAD)
+  --json                 Output JSON: {"valid": true/false, "message": "...", "matches": [...]}
+  -h                     Show this help
+
+EXIT CODES:
+  0 - Pattern found in added content
+  1 - Pattern not found, commit not found, or not in git repository
+  2 - Invalid arguments
+
+EXAMPLES:
+  verify-commit-content -p "function login" -c HEAD
+  verify-commit-content --pattern "import.*Auth" --commit HEAD~1
+  verify-commit-content -p "version.*1.0.0" --json
+EOF
+            exit 0
+            ;;
+        -)
+            case "$OPTARG" in
+                pattern=*) pattern="${OPTARG#*=}" ;;
+                commit=*) commit_ref="${OPTARG#*=}" ;;
+                json) json_output=true ;;
+                *) error_exit "Unknown option --${OPTARG}" 2 ;;
+            esac
+            ;;
+        :) error_exit "Option -${OPTARG} requires an argument" 2 ;;
+        \?) error_exit "Invalid option: -${OPTARG}" 2 ;;
+    esac
+done
+
+shift $((OPTIND - 1))
+
+[[ -z "$pattern" ]] && error_exit "Pattern required (use -p or --pattern)" 2
+[[ $# -gt 0 ]] && error_exit "Unexpected positional arguments (use --commit for commit reference)" 2
+
+# Check dependencies
+command -v git >/dev/null 2>&1 || error_exit "git not found (required dependency)" 1
+command -v grep >/dev/null 2>&1 || error_exit "grep not found (required dependency)" 1
+
+# Check if we're in a git repository
+git rev-parse --git-dir >/dev/null 2>&1 || error_exit "Not in a git repository" 1
+
+# Verify commit exists
+if ! git rev-parse --verify "${commit_ref}" >/dev/null 2>&1; then
+    if $json_output; then
+        escaped_ref=$(json_escape "${commit_ref}")
+        echo "{\"valid\": false, \"message\": \"Commit not found\", \"error\": \"Commit reference does not exist: ${escaped_ref}\"}"
+        exit 1
+    else
+        error_exit "Commit reference does not exist: ${commit_ref}" 1
+    fi
+fi
+
+# Get added lines (lines starting with '+' but not '+++')
+# git show outputs diff format with + prefix for added lines
+added_lines=$(git show "${commit_ref}" | grep "^+" | grep -v "^+++" || true)
+
+# Check if pattern matches any added lines
+matching_lines=$(echo "$added_lines" | grep "$pattern" || true)
+
+if [[ -n "$matching_lines" ]]; then
+    if $json_output; then
+        # Convert to JSON array (first 5 matches to avoid huge output)
+        matches_json="["
+        first=true
+        count=0
+        while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            count=$((count + 1))
+            [[ $count -gt 5 ]] && break
+
+            # Remove leading + and escape quotes for JSON
+            line_content="${line:1}"
+            escaped_line=$(echo "$line_content" | sed 's/\\/\\\\/g; s/"/\\"/g')
+
+            if $first; then
+                matches_json+="\"$escaped_line\""
+                first=false
+            else
+                matches_json+=", \"$escaped_line\""
+            fi
+        done <<< "$matching_lines"
+        matches_json+="]"
+
+        escaped_ref=$(json_escape "${commit_ref}")
+        total_matches=$(echo "$matching_lines" | wc -l)
+        echo "{\"valid\": true, \"message\": \"Pattern found in added content\", \"commit\": \"${escaped_ref}\", \"match_count\": ${total_matches}, \"matches\": ${matches_json}}"
+    else
+        echo "VALID"
+    fi
+    exit 0
+else
+    if $json_output; then
+        escaped_pattern=$(json_escape "$pattern")
+        escaped_ref=$(json_escape "${commit_ref}")
+        echo "{\"valid\": false, \"message\": \"Pattern not found in added content\", \"error\": \"Pattern '${escaped_pattern}' not found in any added lines\", \"commit\": \"${escaped_ref}\"}"
+        exit 1
+    else
+        error_exit "Pattern not found in added content: ${pattern}" 1
+    fi
+fi
