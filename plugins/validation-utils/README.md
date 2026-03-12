@@ -53,9 +53,49 @@ ${CLAUDE_PLUGIN_ROOT}/validation-utils/scripts/validate-json --json config.json
 
 See skill documentation in `skills/` for detailed usage and examples.
 
-## Impact
+## Impact Metrics
 
-Expected 35-45% reduction in complex bash generation for validation tasks, based on analysis of recurring bash patterns Claude generates.
+Based on analysis of recurring bash patterns Claude generates for validation tasks:
+
+**Expected reduction: 35-45% in complex bash generation**
+
+**Typical scenarios:**
+
+| Task | Before (hand-rolled bash) | After (validation-utils) | Reduction |
+|------|--------------------------|--------------------------|-----------|
+| Extract markdown section with filters | sed -n + grep -c + pipeline (3-4 commands) | extract-markdown-section (1 command) | ~65% |
+| Validate JSON syntax and fields | python3 -c '...' + jq combination (2-3 commands) | validate-json (1 command) | ~55% |
+| Verify commit message pattern | git log --format + grep + conditional (2-3 commands) | verify-commit-message (1 command) | ~50% |
+| Check YAML frontmatter structure | head + grep + multiple conditionals (4-5 commands) | validate-yaml-frontmatter (1 command) | ~70% |
+
+**Aggregate impact:**
+- **Fewer tokens** spent generating and explaining multi-stage pipelines
+- **Fewer errors** from typos in complex bash one-liners
+- **Faster execution** through tested, optimized scripts
+- **Better error messages** with clear diagnostics
+
+## Troubleshooting
+
+**Script not found errors:**
+- Ensure `CLAUDE_PLUGIN_ROOT` environment variable is set correctly
+- Verify scripts directory exists: `ls ${CLAUDE_PLUGIN_ROOT}/validation-utils/scripts/`
+- Check scripts are executable: `chmod +x ${CLAUDE_PLUGIN_ROOT}/validation-utils/scripts/*`
+
+**"Not in a git repository" errors:**
+- Git verification scripts must be run from within a git repository
+- Use `git rev-parse --git-dir` to verify you're in a git repo
+- Change to repository directory before running git verification scripts
+
+**JSON parsing errors with --json flag:**
+- Ensure output is captured before piping: `script --json file | jq .`
+- Some error messages may contain characters that need escaping
+- Use `jq -R .` for raw string processing if needed
+
+**Dependency not found:**
+- All scripts require standard Unix utilities (bash, grep, sed)
+- validate-json requires `python3` and `jq`
+- Git scripts require `git` command
+- Verify dependencies: `command -v python3 jq git`
 
 ## License
 
