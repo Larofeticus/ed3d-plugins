@@ -19,19 +19,30 @@ Prevent semantic confusion when Claude assists users with NERSC systems by provi
 
 **Data:**
 - `skills/nersc-terminology/semantic_confusion_glossary.md` — 142 NERSC terms with NERSC-specific meanings, common AI confusion patterns, impact of misunderstanding, research keywords
+- `skills/nersc-terminology/term-index.json` — Machine-readable term index (142 terms with line ranges)
+- `skills/nersc-terminology/term-tables.md` — Human-readable term tables by category
+
+**Scripts:**
+- `scripts/extract-glossary-terms` — Extracts term index from glossary, outputs JSON
+- `scripts/generate-term-tables.sh` — Generates markdown term tables from term-index.json (bash)
+- `scripts/generate-term-tables.py` — Generates markdown term tables from term-index.json (python)
+- `scripts/validate-term-index` — Validates all term index entries map to correct glossary lines
 
 ### What nersc-support Guarantees
 
 - Glossary file contains exactly 142 terms organized into 8 categories
 - Each glossary entry is exactly 7 lines (term name, blank, meaning, blank, confusion, impact, research)
 - Term index in SKILL.md maps all 142 terms to correct line ranges in glossary
+- `term-index.json` mirrors the embedded SKILL.md term index in machine-readable form
+- Validation script (`scripts/validate-term-index`) confirms 100% term-to-line-range accuracy
 - Skill auto-activates when conversation context mentions NERSC systems or services
 
 ### What nersc-support Expects
 
 - Glossary file remains colocated with skill: `skills/nersc-terminology/semantic_confusion_glossary.md`
 - Source glossary at `/global/homes/w/warndt/glossary_builder/semantic_confusion_glossary.md` is authoritative version
-- If glossary is updated (new terms, line shifts), term index in SKILL.md must be regenerated
+- If glossary is updated (new terms, line shifts), term index in SKILL.md and `term-index.json` must be regenerated via `scripts/extract-glossary-terms`
+- After regeneration, run `scripts/validate-term-index` to confirm accuracy
 
 ## Dependencies
 
@@ -78,5 +89,12 @@ Prevent semantic confusion when Claude assists users with NERSC systems by provi
 - `.claude-plugin/plugin.json` — Plugin metadata
 - `LICENSE` — CC-BY-SA-4.0 license text
 - `README.md` — User-facing documentation
+- `VALIDATION.md` — Validation results documenting 100% term index accuracy
+- `scripts/extract-glossary-terms` — Extracts term index from glossary source
+- `scripts/validate-term-index` — Validates term index against glossary entries
+- `scripts/generate-term-tables.sh` — Generates term tables (bash wrapper)
+- `scripts/generate-term-tables.py` — Generates term tables (python)
 - `skills/nersc-terminology/SKILL.md` — Auto-activated skill with embedded term index
 - `skills/nersc-terminology/semantic_confusion_glossary.md` — 142-term glossary (copied from source)
+- `skills/nersc-terminology/term-index.json` — Machine-readable term index
+- `skills/nersc-terminology/term-tables.md` — Term tables by category (generated)
