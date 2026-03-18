@@ -136,6 +136,25 @@
                 "email": "ed@ed3d.net"
             },
             "license": "UNLICENSED"
+        },
+        {
+            "name": "nersc-support",
+            "description": "NERSC-specific terminology and support for accurate guidance on NERSC systems, storage, and scheduling - prevents semantic confusion on 142 domain terms",
+            "version": "1.0.0",
+            "source": "./plugins/nersc-support",
+            "author": {
+                "name": "Ed",
+                "email": "ed@ed3d.net"
+            },
+            "license": "UNLICENSED",
+            "keywords": [
+                "nersc",
+                "hpc",
+                "terminology",
+                "semantic-confusion",
+                "reference",
+                "support"
+            ]
         }
     ]
 }

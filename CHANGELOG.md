@@ -1,5 +1,16 @@
 # Changelog
 
+## [nersc-support] 1.0.0
+
+Plugin providing NERSC-specific terminology disambiguation to prevent semantic confusion during system administration work.
+
+**New:**
+- nersc-terminology skill with embedded term index of 142 NERSC terms across 8 categories
+- Semantic confusion glossary (86KB) with 7-line entries: NERSC meaning, common confusion patterns, impact, research keywords
+- Auto-activation on NERSC context keywords (Perlmutter, Cori, HPSS, storage, scheduling)
+- Session-aware term extraction to avoid redundant glossary reads (typical: 5-15 terms per session)
+- Validation script confirming 100% accuracy of term-to-line-range mappings before release
+
 ## [validation-utils] 1.0.0
 
 Initial release of validation-utils plugin - reusable bash scripts for file and git verification.
