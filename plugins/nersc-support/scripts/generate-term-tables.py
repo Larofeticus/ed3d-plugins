@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+"""Generate markdown tables from term-index.json"""
+
+import json
+import sys
+
+JSON_FILE = "plugins/nersc-support/skills/nersc-terminology/term-index.json"
+OUTPUT_FILE = "plugins/nersc-support/skills/nersc-terminology/term-tables.md"
+
+# Define category line ranges from glossary metadata
+categories = {
+    "Filesystems": (38, 100),
+    "Services and Platforms": (108, 274),
+    "Commands and Tools": (282, 472),
+    "Quality of Service": (480, 550),
+    "Infrastructure": (558, 676),
+    "System Concepts": (684, 778),
+    "Specialized Tools": (787, 913),
+    "Acronyms and Abbreviations": (921, 1215),
+}
+
+# Read JSON
+with open(JSON_FILE, 'r') as f:
+    data = json.load(f)
+
+# Write output
+with open(OUTPUT_FILE, 'w') as out:
+    # Write header
+    out.write("""## Term Index
+
+The glossary contains 142 NERSC-specific terms across 8 categories. Each entry is exactly 7 lines:
+- Line 1: Term name
+- Line 2: [blank]
+- Line 3: NERSC-specific meaning
+- Line 4: [blank]
+- Line 5: Common AI confusion pattern
+- Line 6: Impact of misunderstanding
+- Line 7: Research keywords
+
+To extract a term's definition, use: `Read(file_path="${CLAUDE_PLUGIN_ROOT}/nersc-support/skills/nersc-terminology/semantic_confusion_glossary.md", offset=line_start, limit=7)`
+
+""")
+
+    # Process each category
+    for category, (start, end) in categories.items():
+        out.write(f"\n### {category}\n\n")
+        out.write("| Term | Lines |\n")
+        out.write("|------|-------|\n")
+
+        # Extract terms in this range
+        for term in data['terms']:
+            if start <= term['line_start'] <= end:
+                out.write(f"| {term['name']} | {term['line_start']}-{term['line_end']} |\n")
+
+print(f"Term tables generated: {OUTPUT_FILE}")
