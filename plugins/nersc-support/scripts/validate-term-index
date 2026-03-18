@@ -53,6 +53,16 @@ error_exit() {
     exit "${exit_code}"
 }
 
+# JSON escape function: properly escape strings for JSON output
+json_escape() {
+    local string="$1"
+    # Escape backslashes first, then quotes, then newlines
+    string="${string//\\/\\\\}"
+    string="${string//\"/\\\"}"
+    string="${string//$'\n'/\\n}"
+    echo "$string"
+}
+
 # Parse arguments
 skill_file=""
 glossary_file=""
@@ -90,10 +100,10 @@ GLOSSARY_FILE="${glossary_file:-plugins/nersc-support/skills/nersc-terminology/s
 
 # Verify files exist
 if [[ ! -f "$SKILL_FILE" ]]; then
-    error_exit "SKILL.md not found: $SKILL_FILE" 1
+    error_exit "SKILL.md not found: $SKILL_FILE" 2
 fi
 if [[ ! -f "$GLOSSARY_FILE" ]]; then
-    error_exit "Glossary not found: $GLOSSARY_FILE" 1
+    error_exit "Glossary not found: $GLOSSARY_FILE" 2
 fi
 
 # Extract term index from SKILL.md
@@ -228,10 +238,11 @@ if [[ "$json_output" == "true" ]]; then
         echo "  \"failed_terms\": $errors,"
         echo "  \"errors\": ["
         for i in "${!error_messages[@]}"; do
+            escaped=$(json_escape "${error_messages[$i]}")
             if [[ $i -lt $((${#error_messages[@]} - 1)) ]]; then
-                echo "    \"${error_messages[$i]}\","
+                echo "    \"${escaped}\","
             else
-                echo "    \"${error_messages[$i]}\""
+                echo "    \"${escaped}\""
             fi
         done
         echo "  ]"
