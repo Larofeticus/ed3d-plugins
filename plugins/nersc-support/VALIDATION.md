@@ -69,23 +69,24 @@ All 6 AC groups verified:
 - **AC2:** Term index is complete and accurate
   - ✓ AC2.1: All 142 terms present in index
   - ✓ AC2.2: 100% line range accuracy
-  - ✓ AC2.3: Index correctly documents term locations
+  - ✓ AC2.3: Terms organized into 8 category tables matching glossary structure
   - ✓ AC2.4: No malformed entries detected
+  - ✓ AC2.5: Compact table format fits all 142 terms efficiently
 
 - **AC3:** Glossary extraction works correctly
-  - ✓ AC3.1: Terms extract within single Claude session
-  - ✓ AC3.2: Extraction requires 1-3 Read tool calls per term
-  - ✓ AC3.3: Extracted definitions integrate naturally into responses
-  - ✓ AC3.4: Multiple terms in one message handled efficiently
-  - ✓ AC3.5: Session context tracking prevents redundant lookups
-  - ✓ AC3.6: Error handling for missing/malformed entries
+  - ✓ AC3.1: First mention of indexed term triggers Read tool extraction
+  - ✓ AC3.2: Subsequent mentions recall previous read (session efficiency)
+  - ✓ AC3.3: Multiple different terms trigger appropriate extractions
+  - ✓ AC3.4: Malformed line range handled gracefully with error handling
+  - ✓ AC3.5: Missing glossary file results in degraded mode behavior
+  - ✓ AC3.6: Case-insensitive term matching supported
 
 - **AC4:** Glossary entries provide complete information
-  - ✓ AC4.1: All entries have NERSC-specific meanings
-  - ✓ AC4.2: All entries document confusion patterns
-  - ✓ AC4.3: All entries note impact of misunderstanding
-  - ✓ AC4.4: All entries include research keywords
-  - ✓ AC4.5: Entry format supports efficient extraction
+  - ✓ AC4.1: Each glossary entry contains NERSC-specific meaning
+  - ✓ AC4.2: Each entry documents common AI confusion pattern
+  - ✓ AC4.3: Each entry explains impact of misunderstanding
+  - ✓ AC4.4: Each entry provides research keywords for investigation
+  - ✓ AC4.5: NERSC-specific definitions incorporated into Claude responses
 
 - **AC5:** Semantic confusion prevented
   - ✓ AC5.1: NERSC-specific definitions used in guidance

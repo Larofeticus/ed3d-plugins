@@ -44,6 +44,8 @@ Prevent semantic confusion when Claude assists users with NERSC systems by provi
 - If glossary is updated (new terms, line shifts), term index in SKILL.md and `term-index.json` must be regenerated via `scripts/extract-glossary-terms`
 - After regeneration, run `scripts/validate-term-index` to confirm accuracy
 
+**Known Limitation:** The `generate-term-tables.sh` and `generate-term-tables.py` scripts contain hardcoded category line ranges (lines 9-16 in bash, 11-19 in python). These ranges must be manually updated if the glossary file structure changes (adding/removing terms or categories that shift line numbers). The `extract-glossary-terms` script uses dynamic parsing to avoid this issue; consider regenerating term-tables by updating the hardcoded ranges in both scripts if the glossary structure changes significantly.
+
 ## Dependencies
 
 **External:**
