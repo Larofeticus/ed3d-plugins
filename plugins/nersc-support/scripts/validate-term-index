@@ -1,0 +1,279 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Validate term index in SKILL.md against glossary entries
+# Usage: validate-term-index [SKILL_FILE] [GLOSSARY_FILE] [--json]
+# Exit codes: 0=success (100% validation), 1=validation failure, 2=invalid usage
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+show_help() {
+    cat <<EOF
+Usage: validate-term-index [SKILL_FILE] [GLOSSARY_FILE] [--json]
+
+Validate that all 142 terms in SKILL.md term index correctly map to
+glossary entries. Checks:
+- Term name matches on line 1
+- 7-line structure (term, blank, meaning, blank, confusion, impact, research)
+- All expected terms present
+
+Arguments:
+  SKILL_FILE       Path to SKILL.md (default: plugins/nersc-support/skills/nersc-terminology/SKILL.md)
+  GLOSSARY_FILE    Path to glossary (default: plugins/nersc-support/skills/nersc-terminology/semantic_confusion_glossary.md)
+
+Options:
+  --json           Output results as JSON
+  -h, --help       Show this help message
+
+Exit codes:
+  0 - Success: 100% validation passed
+  1 - Validation failure: missing or malformed entries
+  2 - Invalid usage
+
+Examples:
+  # Run validation with defaults (plain output)
+  validate-term-index
+
+  # Run validation with custom paths
+  validate-term-index path/to/SKILL.md path/to/glossary.md
+
+  # Run validation (JSON output)
+  validate-term-index --json
+EOF
+}
+
+error_exit() {
+    local message="$1"
+    local exit_code="${2:-1}"
+    echo -e "${RED}ERROR: ${message}${NC}" >&2
+    exit "${exit_code}"
+}
+
+# Parse arguments
+skill_file=""
+glossary_file=""
+json_output=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        --json)
+            json_output=true
+            shift
+            ;;
+        -*)
+            error_exit "Unknown option: $1" 2
+            ;;
+        *)
+            if [[ -z "$skill_file" ]]; then
+                skill_file="$1"
+            elif [[ -z "$glossary_file" ]]; then
+                glossary_file="$1"
+            else
+                error_exit "Too many arguments" 2
+            fi
+            shift
+            ;;
+    esac
+done
+
+# File paths with defaults
+SKILL_FILE="${skill_file:-plugins/nersc-support/skills/nersc-terminology/SKILL.md}"
+GLOSSARY_FILE="${glossary_file:-plugins/nersc-support/skills/nersc-terminology/semantic_confusion_glossary.md}"
+
+# Verify files exist
+if [[ ! -f "$SKILL_FILE" ]]; then
+    error_exit "SKILL.md not found: $SKILL_FILE" 1
+fi
+if [[ ! -f "$GLOSSARY_FILE" ]]; then
+    error_exit "Glossary not found: $GLOSSARY_FILE" 1
+fi
+
+# Extract term index from SKILL.md
+declare -a term_names=()
+declare -a line_ranges=()
+
+while IFS='|' read -r _ term range _; do
+    # Trim whitespace manually to avoid quote handling issues
+    term="${term#"${term%%[![:space:]]*}"}"
+    term="${term%"${term##*[![:space:]]}"}"
+    range="${range#"${range%%[![:space:]]*}"}"
+    range="${range%"${range##*[![:space:]]}"}"
+
+    # Skip table headers and empty lines
+    [[ -z "$term" || "$term" =~ ^-+$ || "$term" == "Term" ]] && continue
+
+    # Skip if range doesn't look like "NNN-NNN" format
+    [[ ! "$range" =~ ^[0-9]+-[0-9]+$ ]] && continue
+
+    term_names+=("$term")
+    line_ranges+=("$range")
+done < <(grep "^|" "$SKILL_FILE" | grep -v "^| Term |")
+
+total_terms=${#term_names[@]}
+validated=0
+errors=0
+
+# Validation results
+declare -a failed_terms=()
+declare -a error_messages=()
+
+# Validate each term
+for i in "${!term_names[@]}"; do
+    term="${term_names[$i]}"
+    range="${line_ranges[$i]}"
+
+    # Split line range (avoid IFS issues in loops)
+    line_start="${range%-*}"
+    line_end="${range#*-}"
+
+    # Extract entry from glossary
+    entry=$(sed -n "${line_start},${line_end}p" "$GLOSSARY_FILE")
+
+    # Verify line 1 matches term name
+    line1=$(echo "$entry" | head -1)
+
+    if [[ "$line1" != "$term" ]]; then
+        ((errors+=1))
+        failed_terms+=("$term")
+        error_messages+=("Term '$term' line range ${range}: line 1 is '$line1', expected '$term'")
+        continue
+    fi
+
+    # Verify 7-line structure
+    line_count=$(echo "$entry" | wc -l)
+    if [[ $line_count -ne 7 ]]; then
+        ((errors+=1))
+        failed_terms+=("$term")
+        error_messages+=("Term '$term' line range ${range}: has ${line_count} lines, expected 7")
+        continue
+    fi
+
+    # Verify line 2 is blank
+    line2=$(echo "$entry" | sed -n '2p')
+    if [[ -n "$line2" ]]; then
+        ((errors+=1))
+        failed_terms+=("$term")
+        error_messages+=("Term '$term': line 2 should be blank, found content")
+        continue
+    fi
+
+    # Verify line 3 contains meaning (non-empty)
+    line3=$(echo "$entry" | sed -n '3p')
+    if [[ -z "$line3" ]]; then
+        ((errors+=1))
+        failed_terms+=("$term")
+        error_messages+=("Term '$term': line 3 (meaning) is empty")
+        continue
+    fi
+
+    # Verify line 4 is blank
+    line4=$(echo "$entry" | sed -n '4p')
+    if [[ -n "$line4" ]]; then
+        ((errors+=1))
+        failed_terms+=("$term")
+        error_messages+=("Term '$term': line 4 should be blank, found content")
+        continue
+    fi
+
+    # Verify line 5 contains confusion pattern (non-empty)
+    line5=$(echo "$entry" | sed -n '5p')
+    if [[ -z "$line5" ]]; then
+        ((errors+=1))
+        failed_terms+=("$term")
+        error_messages+=("Term '$term': line 5 (confusion) is empty")
+        continue
+    fi
+
+    # Verify line 6 contains impact (non-empty)
+    line6=$(echo "$entry" | sed -n '6p')
+    if [[ -z "$line6" ]]; then
+        ((errors+=1))
+        failed_terms+=("$term")
+        error_messages+=("Term '$term': line 6 (impact) is empty")
+        continue
+    fi
+
+    # Verify line 7 contains research keywords (non-empty)
+    line7=$(echo "$entry" | sed -n '7p')
+    if [[ -z "$line7" ]]; then
+        ((errors+=1))
+        failed_terms+=("$term")
+        error_messages+=("Term '$term': line 7 (research) is empty")
+        continue
+    fi
+
+    # Validation passed for this term
+    ((validated+=1))
+done
+
+# Report results
+expected_count=142
+
+if [[ "$json_output" == "true" ]]; then
+    # JSON output
+    echo "{"
+    echo "  \"valid\": $([ "$errors" -eq 0 ] && echo "true" || echo "false"),"
+    echo "  \"expected_terms\": $expected_count,"
+    echo "  \"found_terms\": $total_terms,"
+    echo "  \"validated_terms\": $validated,"
+    if [[ $errors -gt 0 ]]; then
+        echo "  \"failed_terms\": $errors,"
+        echo "  \"errors\": ["
+        for i in "${!error_messages[@]}"; do
+            if [[ $i -lt $((${#error_messages[@]} - 1)) ]]; then
+                echo "    \"${error_messages[$i]}\","
+            else
+                echo "    \"${error_messages[$i]}\""
+            fi
+        done
+        echo "  ]"
+    else
+        echo "  \"failed_terms\": $errors"
+    fi
+    echo "}"
+else
+    # Plain output with colors
+    echo ""
+    echo "========================================="
+    echo "  NERSC Term Index Validation Results"
+    echo "========================================="
+    echo ""
+    echo "Expected terms:  $expected_count"
+    echo "Found terms:     $total_terms"
+    echo "Validated:       $validated"
+    echo "Failed:          $errors"
+    echo ""
+
+    if [[ $errors -eq 0 && $total_terms -eq $expected_count ]]; then
+        echo -e "${GREEN}✓ SUCCESS: 100% validation passed (${validated}/${expected_count} terms)${NC}"
+        echo ""
+    else
+        echo -e "${RED}✗ VALIDATION FAILED${NC}"
+        echo ""
+        if [[ $total_terms -ne $expected_count ]]; then
+            echo -e "${YELLOW}Warning: Expected $expected_count terms, found $total_terms${NC}"
+        fi
+        if [[ $errors -gt 0 ]]; then
+            echo "Errors:"
+            for msg in "${error_messages[@]}"; do
+                echo -e "  ${RED}✗${NC} $msg"
+            done
+        fi
+        echo ""
+    fi
+fi
+
+# Exit code
+if [[ $errors -eq 0 && $total_terms -eq $expected_count ]]; then
+    exit 0
+else
+    exit 1
+fi
