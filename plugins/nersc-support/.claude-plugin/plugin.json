@@ -1,0 +1,11 @@
+{
+  "name": "nersc-support",
+  "version": "1.0.0",
+  "description": "NERSC-specific terminology and support for accurate guidance on NERSC systems, storage, and scheduling",
+  "author": {
+    "name": "Ed",
+    "email": "ed@ed3d.net"
+  },
+  "license": "UNLICENSED",
+  "keywords": ["nersc", "terminology", "hpc", "support", "semantic-confusion"]
+}
