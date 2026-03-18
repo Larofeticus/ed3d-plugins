@@ -40,6 +40,23 @@ error_exit() {
     exit "${exit_code}"
 }
 
+# JSON escape function: escapes special characters in strings for JSON output
+# Handles: quotes, backslashes, control characters
+json_escape() {
+    local string="$1"
+    # Escape backslashes first (must be done before other escapes)
+    string="${string//\\/\\\\}"
+    # Escape double quotes
+    string="${string//\"/\\\"}"
+    # Escape newlines
+    string="${string//$'\n'/\\n}"
+    # Escape carriage returns
+    string="${string//$'\r'/\\r}"
+    # Escape tabs
+    string="${string//$'\t'/\\t}"
+    printf '%s' "$string"
+}
+
 # Parse arguments
 glossary_file=""
 json_output=false
@@ -110,6 +127,8 @@ for i in "${!categories[@]}"; do
         max_scan=15  # Look up to 15 lines forward to handle extra blanks
 
         # Scan forward until we find a non-blank line (term name)
+        # NOTE: This uses sed in a loop (~1400 calls for 142 terms across 8 categories).
+        # Current performance is acceptable; for optimization, could pre-load file into array.
         term_name=""
         actual_line=$search_line
         for ((scan=0; scan<max_scan; scan++)); do
@@ -128,6 +147,10 @@ for i in "${!categories[@]}"; do
         fi
 
         # Skip lines that are clearly not term names (common content line patterns)
+        # NOTE: This is a denylist-based approach. It assumes glossary content starts with
+        # known keywords. The backstop is the final validation check (total count must == 142)
+        # which ensures completeness despite any brittle patterns. If new glossary content
+        # patterns are added without matching keywords here, validation will fail at the count check.
         if [[ "$term_name" =~ ^(Research:|AI agents\ may|This\ |Configuration\ |Meaningless\ |Path\ |Acronym\ |Context\ |The\ |This\ confusion) ]]; then
             # This is content, not a term line - we're offset
             validation_errors=$((validation_errors + 1))
@@ -168,6 +191,11 @@ if [[ $total_extracted -ne $expected_count ]]; then
     error_exit "Expected $expected_count terms, extracted $total_extracted" 1
 fi
 
+# Validate no structural errors during extraction
+if [[ $validation_errors -gt 0 ]]; then
+    error_exit "Validation failed with $validation_errors errors" 1
+fi
+
 # Output results
 if [[ "$json_output" == true ]]; then
     # JSON output for embedding in skill document
@@ -175,18 +203,19 @@ if [[ "$json_output" == true ]]; then
     echo '  "valid": true,'
     echo '  "message": "Term index extracted and validated",'
     echo '  "total_terms": '$total_extracted','
-    echo '  "categories": 8,'
+    echo '  "categories": '${#categories[@]}','
     echo '  "terms": ['
 
     for i in "${!all_terms[@]}"; do
         term="${all_terms[$i]}"
         range="${all_ranges[$i]}"
         IFS='-' read -r start end <<< "$range"
+        escaped_term=$(json_escape "$term")
 
         if [[ $i -lt $((${#all_terms[@]} - 1)) ]]; then
-            echo "    {\"name\": \"$term\", \"line_start\": $start, \"line_end\": $end},"
+            echo "    {\"name\": \"$escaped_term\", \"line_start\": $start, \"line_end\": $end},"
         else
-            echo "    {\"name\": \"$term\", \"line_start\": $start, \"line_end\": $end}"
+            echo "    {\"name\": \"$escaped_term\", \"line_start\": $start, \"line_end\": $end}"
         fi
     done
 
