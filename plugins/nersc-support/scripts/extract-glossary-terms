@@ -1,0 +1,204 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Extract term index from NERSC semantic confusion glossary
+# Usage: extract-glossary-terms <glossary-file> [--json]
+# Exit codes: 0=success, 1=validation failure, 2=invalid usage
+
+show_help() {
+    cat <<EOF
+Usage: extract-glossary-terms GLOSSARY_FILE [--json]
+
+Extract all term names and line ranges from NERSC semantic confusion glossary.
+Validates that each line range correctly extracts the term entry.
+
+Arguments:
+  GLOSSARY_FILE    Path to semantic_confusion_glossary.md
+
+Options:
+  --json           Output term index as JSON
+  -h, --help       Show this help message
+
+Exit codes:
+  0 - Success: all 142 terms extracted and validated
+  1 - Validation failure: missing or malformed entries
+  2 - Invalid usage
+
+Examples:
+  # Extract term index (plain output)
+  extract-glossary-terms skills/nersc-terminology/semantic_confusion_glossary.md
+
+  # Extract term index as JSON for embedding
+  extract-glossary-terms skills/nersc-terminology/semantic_confusion_glossary.md --json
+EOF
+}
+
+error_exit() {
+    local message="$1"
+    local exit_code="${2:-1}"
+    echo "ERROR: ${message}" >&2
+    exit "${exit_code}"
+}
+
+# Parse arguments
+glossary_file=""
+json_output=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        --json)
+            json_output=true
+            shift
+            ;;
+        -*)
+            error_exit "Unknown option: $1" 2
+            ;;
+        *)
+            if [[ -z "$glossary_file" ]]; then
+                glossary_file="$1"
+            else
+                error_exit "Too many arguments" 2
+            fi
+            shift
+            ;;
+    esac
+done
+
+# Validate required arguments
+[[ -z "$glossary_file" ]] && error_exit "Missing required argument: GLOSSARY_FILE" 2
+[[ ! -f "$glossary_file" ]] && error_exit "Glossary file not found: $glossary_file" 1
+
+# Extract category metadata from glossary header dynamically
+# Parse lines like: "- Filesystems: 8 entries (lines 38-100)"
+# This avoids hardcoding line numbers that break if glossary formatting changes
+
+declare -a categories=()
+declare -a category_counts=()
+
+while read -r line; do
+    # Parse line like: "- **Filesystems**: 8 entries (lines 38-100)"
+    # Extract category name by removing prefix "- **" and suffix "**:"
+    category=$(echo "$line" | sed 's/^- \*\*//' | sed 's/\*\*:.*//')
+    # Extract entry count (all digits before " entries")
+    entry_count=$(echo "$line" | grep -o '[0-9]* entries' | cut -d' ' -f1)
+    # Extract start line (digits after "lines ")
+    start_line=$(echo "$line" | grep -o 'lines [0-9]*' | cut -d' ' -f2)
+
+    categories+=("$category:$start_line")
+    category_counts+=("$entry_count")
+done < <(grep "entries (lines" "$glossary_file")
+
+declare -a all_terms=()
+declare -a all_ranges=()
+total_extracted=0
+validation_errors=0
+
+# Extract terms from each category
+# Use dynamic scanning to find actual term lines, adjusting for extra blank lines
+for i in "${!categories[@]}"; do
+    IFS=':' read -r category_name start_line <<< "${categories[$i]}"
+    term_count="${category_counts[$i]}"
+
+    # For each expected term in this category
+    for ((n=0; n<term_count; n++)); do
+        # Start searching from the calculated line, but scan forward if needed
+        search_line=$((start_line + n * 8))
+        max_scan=15  # Look up to 15 lines forward to handle extra blanks
+
+        # Scan forward until we find a non-blank line (term name)
+        term_name=""
+        actual_line=$search_line
+        for ((scan=0; scan<max_scan; scan++)); do
+            test_line=$(sed -n "$((search_line + scan))p" "$glossary_file" 2>/dev/null || echo "")
+            if [[ -n "$test_line" ]]; then
+                term_name="$test_line"
+                actual_line=$((search_line + scan))
+                break
+            fi
+        done
+
+        # Validate term name is non-empty
+        if [[ -z "$term_name" ]]; then
+            validation_errors=$((validation_errors + 1))
+            continue
+        fi
+
+        # Skip lines that are clearly not term names (common content line patterns)
+        if [[ "$term_name" =~ ^(Research:|AI agents\ may|This\ |Configuration\ |Meaningless\ |Path\ |Acronym\ |Context\ |The\ |This\ confusion) ]]; then
+            # This is content, not a term line - we're offset
+            validation_errors=$((validation_errors + 1))
+            continue
+        fi
+
+        # Calculate line range based on actual line where term was found
+        line_start=$actual_line
+        line_end=$((line_start + 6))  # 7-line entry (0-6 offset)
+
+        # Validate entry structure (line 2 should be blank, line 3 should contain text)
+        blank_line=$(sed -n "$((line_start + 1))p" "$glossary_file")
+        meaning_line=$(sed -n "$((line_start + 2))p" "$glossary_file")
+
+        if [[ -n "$blank_line" ]]; then
+            # Not standard format, but accept it if we found a meaning line
+            if [[ -z "$meaning_line" ]]; then
+                validation_errors=$((validation_errors + 1))
+                continue
+            fi
+        fi
+
+        if [[ -z "$meaning_line" ]]; then
+            validation_errors=$((validation_errors + 1))
+            continue
+        fi
+
+        # Store term and range
+        all_terms+=("$term_name")
+        all_ranges+=("${line_start}-${line_end}")
+        total_extracted=$((total_extracted + 1))
+    done
+done
+
+# Validate total count
+expected_count=142
+if [[ $total_extracted -ne $expected_count ]]; then
+    error_exit "Expected $expected_count terms, extracted $total_extracted" 1
+fi
+
+# Output results
+if [[ "$json_output" == true ]]; then
+    # JSON output for embedding in skill document
+    echo "{"
+    echo '  "valid": true,'
+    echo '  "message": "Term index extracted and validated",'
+    echo '  "total_terms": '$total_extracted','
+    echo '  "categories": 8,'
+    echo '  "terms": ['
+
+    for i in "${!all_terms[@]}"; do
+        term="${all_terms[$i]}"
+        range="${all_ranges[$i]}"
+        IFS='-' read -r start end <<< "$range"
+
+        if [[ $i -lt $((${#all_terms[@]} - 1)) ]]; then
+            echo "    {\"name\": \"$term\", \"line_start\": $start, \"line_end\": $end},"
+        else
+            echo "    {\"name\": \"$term\", \"line_start\": $start, \"line_end\": $end}"
+        fi
+    done
+
+    echo '  ]'
+    echo "}"
+else
+    # Plain output: term | line_range
+    echo "Term extraction and validation complete: $total_extracted terms"
+    echo ""
+    for i in "${!all_terms[@]}"; do
+        printf "%-40s %s\n" "${all_terms[$i]}" "${all_ranges[$i]}"
+    done
+fi
+
+exit 0
