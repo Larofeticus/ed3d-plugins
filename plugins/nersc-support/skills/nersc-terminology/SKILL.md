@@ -308,8 +308,8 @@ User: "I need to clean up my scratch space on Perlmutter"
 **After consulting term index:**
 1. Detect "scratch" and "Perlmutter" (both in index)
 2. Extract "scratch" entry (lines 86-92)
-3. Learn: Scratch is Lustre parallel filesystem, not temporary data; auto-purged after 12 weeks; high-performance storage
-4. Respond with accurate NERSC guidance: "`$SCRATCH` on Perlmutter is the Lustre parallel filesystem for high-performance I/O. Files are automatically purged after 12 weeks of inactivity. Check quota with `myquota` and consider moving long-term data to HPSS archive."
+3. Learn: Scratch is Lustre parallel filesystem, not temporary data; auto-purged after 8 weeks; high-performance storage
+4. Respond with accurate NERSC guidance: "`$SCRATCH` on Perlmutter is the Lustre parallel filesystem for high-performance I/O. Files are automatically purged after 8 weeks of inactivity. Check quota with `myquota` and consider moving long-term data to HPSS archive."
 
 **Example 2: Multiple terms in question**
 
@@ -318,7 +318,7 @@ User: "How do I archive my Perlmutter results to HPSS?"
 **Terms detected:** "archive", "Perlmutter", "HPSS"
 1. Extract "archive" (lines 38-44): HPSS tape storage, not compressed file
 2. Extract "Perlmutter" (lines 212-218): HPE Cray EX supercomputer
-3. Extract "HPSS" (lines ~240s): High Performance Storage System
+3. Extract "HPSS" (lines 606-612): High Performance Storage System
 4. Combine definitions: "To archive your Perlmutter results to HPSS (tape-based long-term storage), use `hsi` or `htar` commands. HPSS provides archival storage distinct from scratch or project filesystems..."
 
 ## Session Efficiency
